@@ -11,7 +11,7 @@ import {
   ProductFitReport,
   RawScrapedReview,
 } from './src/utils/fitAnalyzer.ts';
-import { HM_HEAVYWEIGHT_TEE_REVIEWS, SEED_CATALOG } from './src/data/seedCatalog.ts';
+import { HM_HEAVYWEIGHT_TEE_REVIEWS } from './src/data/seedCatalog.ts';
 
 dotenv.config();
 
@@ -191,16 +191,6 @@ const upsertReportTransaction = db.transaction((report: ProductFitReport) => {
     VALUES (?, ?, ?, ?, ?)
   `).run(report.sku, report.name, 'UPSERT_COMMIT', totalRows, nowIso);
 });
-
-// Seed initial commercial SKUs into SQLite if empty
-const existingCount = (
-  db.prepare(`SELECT COUNT(*) as cnt FROM commercial_skus`).get() as { cnt: number }
-).cnt;
-if (existingCount === 0) {
-  for (const item of SEED_CATALOG) {
-    upsertReportTransaction(item);
-  }
-}
 
 interface MockStoreProduct {
   slug: string;

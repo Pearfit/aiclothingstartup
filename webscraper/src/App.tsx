@@ -8,7 +8,6 @@ import {
   Check,
   RefreshCw,
 } from 'lucide-react';
-import { SEED_CATALOG } from './data/seedCatalog';
 import {
   GarmentSize,
   ProductFitReport,
@@ -27,18 +26,16 @@ interface DbStatsState {
 }
 
 export default function App() {
-  const [catalog, setCatalog] = useState<ProductFitReport[]>(SEED_CATALOG);
-  const [activeProductId, setActiveProductId] = useState<string>(
-    SEED_CATALOG[0].id
-  );
+  const [catalog, setCatalog] = useState<ProductFitReport[]>([]);
+  const [activeProductId, setActiveProductId] = useState<string>('');
   const [selectedSize, setSelectedSize] = useState<GarmentSize | 'ALL'>('ALL');
   const [selectedZoneFilter, setSelectedZoneFilter] = useState<string | null>(
     null
   );
   const [dbStats, setDbStats] = useState<DbStatsState>({
-    skuCount: SEED_CATALOG.length,
-    sizeMetricRows: SEED_CATALOG.length * 6,
-    reviewRows: SEED_CATALOG.reduce((sum, r) => sum + r.totalReviews, 0),
+    skuCount: 0,
+    sizeMetricRows: 0,
+    reviewRows: 0,
   });
   const [isCommittingActiveSku, setIsCommittingActiveSku] = useState(false);
   const [skuCommitMessage, setSkuCommitMessage] = useState<string | null>(null);
@@ -64,7 +61,7 @@ export default function App() {
         });
       }
     } catch {
-      // Keep seeded catalog fallback if offline
+      // Keep the current catalog if the server is unreachable
     }
   };
 
@@ -111,7 +108,7 @@ export default function App() {
       if (res.ok) {
         const data = await res.json();
         const loadedReports: ProductFitReport[] = data.reports || data.records || [];
-        if (Array.isArray(loadedReports) && loadedReports.length > 0) {
+        if (Array.isArray(loadedReports)) {
           setCatalog(loadedReports);
           const s = data.stats || data;
           setDbStats({
@@ -119,8 +116,8 @@ export default function App() {
             sizeMetricRows: s.sizeMetricRows ?? loadedReports.length * 6,
             reviewRows: s.reviewRows ?? 0,
           });
-          if (activeReport.sku === sku) {
-            setActiveProductId(loadedReports[0].id);
+          if (activeReport?.sku === sku) {
+            setActiveProductId(loadedReports[0]?.id ?? '');
           }
         }
       }
@@ -193,7 +190,9 @@ export default function App() {
     );
   };
 
-  const activeSkuSqlSnippet = generateSqlInsertDump([activeReport]);
+  const activeSkuSqlSnippet = activeReport
+    ? generateSqlInsertDump([activeReport])
+    : '';
 
   return (
     <div className="min-h-screen flex flex-col bg-stone-50 text-slate-900">
@@ -287,12 +286,24 @@ export default function App() {
         {/* Section 2: Commercial Multi-SKU Fit Comparison Database & SQL/JSON/CSV Dump */}
         <CommercialComparisonDatabase
           catalog={catalog}
-          activeProductId={activeReport.id}
+          activeProductId={activeReport?.id ?? ''}
           onSelectProduct={handleSelectProduct}
           onDeleteSku={handleDeleteSku}
           dbStats={dbStats}
         />
 
+        {!activeReport ? (
+          <section className="bg-white border border-dashed border-stone-300 rounded-lg p-10 text-center">
+            <h2 className="font-display text-lg font-semibold text-slate-900">
+              No products scraped yet
+            </h2>
+            <p className="mt-2 text-sm text-slate-600">
+              Paste a product URL or page HTML into the scraper above to build
+              the first fit report.
+            </p>
+          </section>
+        ) : (
+        <>
         {/* Section 3: Active SKU Deep-Dive Inspection Header */}
         <section
           aria-labelledby="active-garment-heading"
@@ -756,6 +767,8 @@ export default function App() {
           selectedZoneFilter={selectedZoneFilter}
           onClearZoneFilter={() => setSelectedZoneFilter(null)}
         />
+        </>
+        )}
       </main>
 
       {/* Quiet Editorial Footer */}
