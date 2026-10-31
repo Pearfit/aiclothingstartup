@@ -6,3 +6,6 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Local SQLite database (created at runtime)
+commercial_fit.db*
