@@ -701,6 +701,17 @@ function renderMockStoreHtml(product: MockStoreProduct): string {
 </html>`;
 }
 
+function inferCategory(text: string): ProductFitReport['category'] {
+  if (/hoodie|sweatshirt|fleece/i.test(text)) return 'Fleece & Hoodies';
+  if (/jacket|coat|parka|outerwear/i.test(text)) return 'Outerwear';
+  if (/sweater|cardigan|knit/i.test(text)) return 'Knitwear';
+  if (/trouser|pants|jeans|chino/i.test(text)) return 'Trousers';
+  if (/dress/i.test(text)) return 'Dresses';
+  if (/t-shirt|\btees?\b/i.test(text)) return 'T-Shirts & Tops';
+  if (/\bshirts?\b|oxford/i.test(text)) return 'Shirting';
+  return 'T-Shirts & Tops';
+}
+
 function scrapeHtmlWithCheerio(
   html: string,
   sourceUrl: string,
@@ -716,9 +727,33 @@ function scrapeHtmlWithCheerio(
   const domNodesScanned = $('*').length;
   const selectorsUsed: string[] = [];
 
+  // schema.org Product / ProductGroup JSON-LD (used by most real storefronts).
+  const ldProducts: any[] = [];
+  $('script[type="application/ld+json"]').each((_, el) => {
+    try {
+      const parsed = JSON.parse($(el).text());
+      const nodes = Array.isArray(parsed) ? parsed : parsed['@graph'] || [parsed];
+      for (const n of nodes) {
+        if (n && /^(Product|ProductGroup)$/.test(n['@type'])) ldProducts.push(n);
+      }
+    } catch {
+      // Ignore malformed JSON-LD blocks.
+    }
+  });
+  const ldProduct = ldProducts[0];
+  const ldOffer = (() => {
+    const offers = ldProduct?.offers || ldProduct?.hasVariant?.[0]?.offers;
+    return Array.isArray(offers) ? offers[0] : offers;
+  })();
+  const breadcrumbText = $('script[type="application/ld+json"]')
+    .map((_, el) => $(el).text())
+    .get()
+    .join(' ');
+
   const extractedName =
     overrides?.productName ||
     $('meta[property="og:title"]').attr('content') ||
+    ldProduct?.name ||
     $('h1.product-title').first().text().trim() ||
     $('h1').first().text().trim() ||
     $('title').text().split('|')[0]?.trim() ||
@@ -727,13 +762,14 @@ function scrapeHtmlWithCheerio(
   const extractedBrand =
     overrides?.brand ||
     $('meta[name="product:brand"]').attr('content') ||
+    (typeof ldProduct?.brand === 'string' ? ldProduct.brand : ldProduct?.brand?.name) ||
     $('.product-brand').first().text().trim() ||
     'Commercial Apparel Vendor';
 
   const rawCategory =
     overrides?.category ||
     ($('meta[name="product:category"]').attr('content') as ProductFitReport['category']) ||
-    'T-Shirts & Tops';
+    inferCategory(`${breadcrumbText} ${ldProduct?.name || ''}`);
 
   const validCategories: ProductFitReport['category'][] = [
     'T-Shirts & Tops',
@@ -757,12 +793,14 @@ function scrapeHtmlWithCheerio(
   const price =
     $('meta[name="product:price"]').attr('content') ||
     $('[data-price]').attr('data-price') ||
-    '$24.99';
+    (ldOffer?.price != null ? `${ldOffer.priceCurrency || ''} $${ldOffer.price}`.trim() : '') ||
+    'Unknown';
 
   const fabricComposition =
     $('meta[name="product:fabric"]').attr('content') ||
     $('[data-fabric]').attr('data-fabric') ||
-    'Scraped Garment Specification';
+    ldProduct?.material ||
+    'Unknown';
 
   const reviews: RawScrapedReview[] = [];
 
@@ -820,6 +858,30 @@ function scrapeHtmlWithCheerio(
   }
 
   if (reviews.length === 0) {
+    for (const product of ldProducts) {
+      const ldReviews = Array.isArray(product.review) ? product.review : product.review ? [product.review] : [];
+      ldReviews.forEach((r: any, idx: number) => {
+        const body = String(r.reviewBody || r.description || '').trim();
+        if (body.length <= 8) return;
+        reviews.push({
+          id: `ld-rev-${idx + 1}`,
+          author: (typeof r.author === 'string' ? r.author : r.author?.name) || `Verified Reviewer #${idx + 1}`,
+          sizePurchased: body.match(/\bSize(?:\s+Purchased)?:\s*([A-Za-z0-9]+)/i)?.[1] || 'M',
+          rating: Math.min(5, Math.max(1, Math.round(parseFloat(r.reviewRating?.ratingValue) || 4))),
+          title: r.name || 'Verified Fit Review',
+          body,
+          date: String(r.datePublished || '').slice(0, 10) || new Date().toISOString().slice(0, 10),
+          verifiedPurchase: true,
+        });
+      });
+    }
+    if (reviews.length > 0) selectorsUsed.push('application/ld+json Review');
+  }
+
+  // The plain-text fallback is for pasted review text. On a full HTML document
+  // it would treat the whole page as one "review", so skip it there.
+  const isFullDocument = /<html[\s>]|<body[\s>]/i.test(html);
+  if (reviews.length === 0 && !isFullDocument) {
     selectorsUsed.push('fallback-text-blocks');
     const fallbackReviews = parseRawReviewBatch(html);
     reviews.push(...fallbackReviews);
@@ -1067,7 +1129,7 @@ async function startServer() {
       if (reviews.length === 0) {
         res.status(422).json({
           error:
-            'No recognizable clothing reviews were found in the target document.',
+            `No recognizable clothing reviews were found in the target document (product detected: "${meta.name}"). Many storefronts load reviews separately from the product page; paste the review section or review text instead.`,
         });
         return;
       }
