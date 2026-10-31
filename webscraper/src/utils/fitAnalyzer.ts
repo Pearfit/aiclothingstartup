@@ -178,6 +178,18 @@ const ZONE_LABELS: Record<AnatomicalZone, string> = {
  * Normalizes diverse raw apparel size strings ("Small", "32", "Extra Large", "2XL", "M/L")
  * into canonical XS - XXL buckets.
  */
+// Maps a storefront's fit label ("A bit tight", "Runs small", ...) to the
+// declaredFitTag vocabulary computeFitSignals understands.
+export function normalizeFitTag(raw: string): string | undefined {
+  const t = (raw || '').toLowerCase();
+  if (/a bit (tight|small|snug)|slightly (tight|small)/.test(t)) return 'Slightly Small';
+  if (/a bit (loose|big|large|roomy)|slightly (loose|big|large)/.test(t)) return 'Slightly Large';
+  if (/runs? small|too (tight|small)|\btight\b|\bsmall\b/.test(t)) return 'Runs Small';
+  if (/runs? (large|big)|too (loose|big|large)|\bloose\b|\blarge\b|\bbig\b/.test(t)) return 'Runs Large';
+  if (/true to size|just right|perfect fit/.test(t)) return 'True to Size';
+  return undefined;
+}
+
 export function normalizeSize(rawSize: string): GarmentSize {
   const cleaned = (rawSize || '').trim().toUpperCase();
   if (!cleaned) return 'M';
@@ -568,15 +580,23 @@ export function parseRawReviewBatch(rawInput: string): RawScrapedReview[] {
     .map((b) => b.trim())
     .filter((b) => b.length > 10);
 
-  blocks.forEach((block, idx) => {
+  blocks.forEach((block) => {
+    const idx = results.length;
     const sizeMatch =
       block.match(
-        /\bSize(?:\s+Purchased|\s+Ordered)?\s*[:=-]\s*(XXL|2XL|XL|XS|S|M|L|Small|Medium|Large|\d{1,2})\b/i
+        /\bSize(?:\s+Purchased|\s+Ordered|\s+Bought|\s+Worn)?\s*[:=-]\s*(?:(?:Men|Women|Kids|Unisex)(?:'s)?\s+)?(XXL|2XL|XL|XXS|XS|S|M|L|Small|Medium|Large|\d{1,2})\b/i
+      ) ||
+      block.match(
+        /\b(?:Purchased|Bought|Ordered)\s+Size\s*[:=-]?\s*(?:(?:Men|Women|Kids|Unisex)(?:'s)?\s+)?(XXL|2XL|XL|XXS|XS|S|M|L|Small|Medium|Large|\d{1,2})\b/i
       ) ||
       block.match(/\[\s*(XXL|2XL|XL|XS|S|M|L)\s*\]/i) ||
       block.match(
         /\b(?:bought|ordered|wearing|got)\s+(?:a\s+|an\s+|size\s+)?(XXL|2XL|XL|XS|S|M|L|Small|Medium|Large)\b/i
       );
+
+    // A review we can't attribute to a size tells us nothing about grading; skip it
+    // rather than guess a size.
+    if (!sizeMatch) return;
 
     const ratingMatch =
       block.match(/\bRating\s*[:=-]\s*(\d(?:\.\d)?)/i) ||
@@ -596,6 +616,11 @@ export function parseRawReviewBatch(rawInput: string): RawScrapedReview[] {
       rating = 5;
     }
 
+    const fitLabel = block.match(
+      /\b(?:How it fits|Fit)\s*[:\-]\s*(runs? small|runs? large|runs? big|true to size|a bit (?:tight|small|loose|big|large)|slightly (?:small|large|tight|loose)|tight|loose)/i
+    )?.[1];
+    const heightMatch = block.match(/\bHeight\s*:\s*(\d[\d'"’”.\s-]*\d["”]?|\d+\s*cm)/i)?.[1];
+
     const cleanBody = block
       .replace(/^\[.*?\]\s*/, '')
       .replace(/\s+/g, ' ')
@@ -604,12 +629,14 @@ export function parseRawReviewBatch(rawInput: string): RawScrapedReview[] {
     results.push({
       id: `parsed-review-${idx + 1}`,
       author: `Reviewer #${idx + 1}`,
-      sizePurchased: sizeMatch ? sizeMatch[1] : GARMENT_SIZES[idx % GARMENT_SIZES.length],
+      sizePurchased: sizeMatch[1],
       rating,
       title: cleanBody.slice(0, 48) + (cleanBody.length > 48 ? '...' : ''),
       body: cleanBody,
       date: '2026-10-20',
       verifiedPurchase: true,
+      declaredFitTag: fitLabel ? normalizeFitTag(fitLabel) : undefined,
+      reviewerHeight: heightMatch?.trim(),
     });
   });
 

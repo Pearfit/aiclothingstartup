@@ -9,7 +9,9 @@
     "start": "node server.ts",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "scrape": "tsx scripts/scrape-urls.ts",
+    "setup:browser": "playwright install chromium"
   },
   "dependencies": {
     "@google/genai": "^2.32.0",
@@ -22,6 +24,7 @@
     "express": "^4.21.2",
     "lucide-react": "^0.546.0",
     "motion": "^12.23.24",
+    "playwright": "1.63.0",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "vite": "^8.3.0"

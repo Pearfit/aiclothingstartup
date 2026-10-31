@@ -1,4 +1,5 @@
 import express from 'express';
+import { readFileSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import * as cheerio from 'cheerio';
@@ -12,6 +13,7 @@ import {
   RawScrapedReview,
 } from './src/utils/fitAnalyzer.ts';
 import { HM_HEAVYWEIGHT_TEE_REVIEWS } from './src/data/seedCatalog.ts';
+import { isBrowserAvailable, renderProductPage, ScrapeBlockedError } from './browserScraper.ts';
 
 dotenv.config();
 
@@ -701,7 +703,18 @@ function renderMockStoreHtml(product: MockStoreProduct): string {
 </html>`;
 }
 
-function inferCategory(text: string): ProductFitReport['category'] {
+// A stable SKU for pages without one, so re-scraping the same URL updates the same record.
+function skuFromUrl(url: string): string {
+  if (!/^https?:\/\//i.test(url)) return `SKU-${Math.floor(1000 + Math.random() * 8999)}`;
+  const path = url.replace(/^https?:\/\/[^/]+/i, '').replace(/[?#].*$/, '');
+  const id = path.match(/[A-Z]?\d{5,}(?:-\d+)*/i)?.[0];
+  if (id) return id.toUpperCase();
+  let hash = 0;
+  for (const ch of url) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+  return `URL-${hash.toString(36).toUpperCase()}`;
+}
+
+function inferCategory(text: string): ProductFitReport['category'] | null {
   if (/hoodie|sweatshirt|fleece/i.test(text)) return 'Fleece & Hoodies';
   if (/jacket|coat|parka|outerwear/i.test(text)) return 'Outerwear';
   if (/sweater|cardigan|knit/i.test(text)) return 'Knitwear';
@@ -709,7 +722,7 @@ function inferCategory(text: string): ProductFitReport['category'] {
   if (/dress/i.test(text)) return 'Dresses';
   if (/t-shirt|\btees?\b/i.test(text)) return 'T-Shirts & Tops';
   if (/\bshirts?\b|oxford/i.test(text)) return 'Shirting';
-  return 'T-Shirts & Tops';
+  return null;
 }
 
 function scrapeHtmlWithCheerio(
@@ -752,8 +765,8 @@ function scrapeHtmlWithCheerio(
 
   const extractedName =
     overrides?.productName ||
-    $('meta[property="og:title"]').attr('content') ||
     ldProduct?.name ||
+    $('meta[property="og:title"]').attr('content')?.replace(/\s+[|–-]\s+[^|–-]+$/, '').trim() ||
     $('h1.product-title').first().text().trim() ||
     $('h1').first().text().trim() ||
     $('title').text().split('|')[0]?.trim() ||
@@ -769,7 +782,7 @@ function scrapeHtmlWithCheerio(
   const rawCategory =
     overrides?.category ||
     ($('meta[name="product:category"]').attr('content') as ProductFitReport['category']) ||
-    inferCategory(`${breadcrumbText} ${ldProduct?.name || ''}`);
+    (inferCategory(extractedName) ?? inferCategory(breadcrumbText) ?? 'T-Shirts & Tops');
 
   const validCategories: ProductFitReport['category'][] = [
     'T-Shirts & Tops',
@@ -788,7 +801,10 @@ function scrapeHtmlWithCheerio(
     overrides?.sku ||
     $('meta[name="product:sku"]').attr('content') ||
     $('[data-sku]').attr('data-sku') ||
-    `SKU-${Math.floor(1000 + Math.random() * 8999)}`;
+    ldProduct?.productGroupID ||
+    ldProduct?.productID ||
+    ldProduct?.sku ||
+    skuFromUrl(sourceUrl);
 
   const price =
     $('meta[name="product:price"]').attr('content') ||
@@ -862,11 +878,13 @@ function scrapeHtmlWithCheerio(
       const ldReviews = Array.isArray(product.review) ? product.review : product.review ? [product.review] : [];
       ldReviews.forEach((r: any, idx: number) => {
         const body = String(r.reviewBody || r.description || '').trim();
-        if (body.length <= 8) return;
+        // Without a stated size the review can't be attributed to a size; skip it.
+        const size = body.match(/\b(?:Size(?:\s+Purchased|\s+Bought)?|Purchased\s+Size)\s*:\s*([A-Za-z0-9]+)/i)?.[1];
+        if (body.length <= 8 || !size) return;
         reviews.push({
           id: `ld-rev-${idx + 1}`,
           author: (typeof r.author === 'string' ? r.author : r.author?.name) || `Verified Reviewer #${idx + 1}`,
-          sizePurchased: body.match(/\bSize(?:\s+Purchased)?:\s*([A-Za-z0-9]+)/i)?.[1] || 'M',
+          sizePurchased: size,
           rating: Math.min(5, Math.max(1, Math.round(parseFloat(r.reviewRating?.ratingValue) || 4))),
           title: r.name || 'Verified Fit Review',
           body,
@@ -942,6 +960,171 @@ function getDatabaseSummary() {
     stats,
     recentLogs,
   };
+}
+
+interface ScrapeInput {
+  url?: string;
+  rawHtml?: string;
+  productName?: string;
+  brand?: string;
+  sku?: string;
+  category?: ProductFitReport['category'];
+}
+
+class ScrapeInputError extends Error {
+  constructor(public status: number, message: string) {
+    super(message);
+  }
+}
+
+// Seconds to wait between pages when scraping several URLs, to stay polite.
+const BATCH_DELAY_MS = Number(process.env.SCRAPE_DELAY_SECONDS || 5) * 1000;
+
+async function loadLivePage(
+  url: string
+): Promise<{ html: string; reviewBlocks: string[]; apiReviews: RawScrapedReview[] }> {
+  if (await isBrowserAvailable()) {
+    try {
+      const page = await renderProductPage(url);
+      return { html: page.html, reviewBlocks: page.reviewBlocks, apiReviews: page.apiReviews };
+    } catch (err) {
+      if (err instanceof ScrapeBlockedError) throw new ScrapeInputError(403, err.message);
+      throw new ScrapeInputError(502, `Failed to load ${url}: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+
+  // No browser installed: plain fetch. Works for sites that render reviews server-side.
+  const response = await fetch(url, {
+    headers: {
+      'User-Agent': 'Mozilla/5.0 (compatible; FitPulseCommercialScraper/3.0)',
+      Accept: 'text/html,application/xhtml+xml',
+    },
+  });
+  if (!response.ok) {
+    throw new ScrapeInputError(400, `Remote server returned HTTP ${response.status} when scraping ${url}.`);
+  }
+  return { html: await response.text(), reviewBlocks: [], apiReviews: [] };
+}
+
+async function scrapeToReport(input: ScrapeInput): Promise<ProductFitReport> {
+  const { url, rawHtml, productName, brand, sku, category } = input;
+  let targetHtml = (rawHtml || '').trim();
+  let sourceUrl = (url || 'batch://direct-review-payload').trim();
+  let reviewBlocks: string[] = [];
+  let apiReviews: RawScrapedReview[] = [];
+
+  if (!targetHtml && url) {
+    const mockMatch = url.match(/\/api\/mock-store\/([a-z0-9-]+)/i);
+    if (mockMatch && MOCK_STORE_PRODUCTS[mockMatch[1]]) {
+      const mockProd = MOCK_STORE_PRODUCTS[mockMatch[1]];
+      targetHtml = renderMockStoreHtml(mockProd);
+      sourceUrl = `https://storefront.fitpulse.local/api/mock-store/${mockProd.slug}`;
+    } else if (/^https?:\/\//i.test(url)) {
+      ({ html: targetHtml, reviewBlocks, apiReviews } = await loadLivePage(url));
+    } else {
+      throw new ScrapeInputError(
+        400,
+        'Provide a valid http(s):// URL, select a target SKU endpoint, or paste review HTML/text.'
+      );
+    }
+  }
+
+  if (!targetHtml) {
+    throw new ScrapeInputError(400, 'No HTML or review content provided to scrape.');
+  }
+
+  const { meta, reviews: domReviews } = scrapeHtmlWithCheerio(targetHtml, sourceUrl, {
+    productName,
+    brand,
+    sku,
+    category,
+  });
+  // Review cards read from the live page carry the purchased size, so prefer them.
+  const browserReviews = reviewBlocks.length ? parseRawReviewBatch(reviewBlocks.join('\n\n')) : [];
+  // The storefront's reviews API (when the page used one) is the most complete source.
+  const [reviews, source] =
+    apiReviews.length >= browserReviews.length && apiReviews.length
+      ? [apiReviews, 'storefront reviews API']
+      : browserReviews.length
+        ? [browserReviews, 'headless-browser review cards']
+        : [domReviews, ''];
+  if (source) {
+    meta.scraperTelemetry.reviewNodesMatched = reviews.length;
+    meta.scraperTelemetry.selectorsUsed = [source];
+  }
+
+  if (reviews.length === 0) {
+    throw new ScrapeInputError(
+      422,
+      `No recognizable clothing reviews were found in the target document (product detected: "${meta.name}"). Many storefronts load reviews separately from the product page; paste the review section or review text instead.`
+    );
+  }
+
+  return aggregateProductFitReport(meta, reviews);
+}
+
+async function scrapeAndStoreUrls(urls: string[]) {
+  const results: { url: string; ok: boolean; sku?: string; name?: string; totalReviews?: number; error?: string }[] = [];
+  for (const [i, url] of urls.entries()) {
+    if (i > 0) await new Promise((r) => setTimeout(r, BATCH_DELAY_MS));
+    try {
+      const report = await scrapeToReport({ url });
+      upsertReportTransaction(report);
+      results.push({ url, ok: true, sku: report.sku, name: report.name, totalReviews: report.totalReviews });
+    } catch (err) {
+      results.push({ url, ok: false, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+  return results;
+}
+
+// Hands-off mode. SCRAPE_URLS_FILE (one URL per line) is scraped at startup; with
+// RESCRAPE_INTERVAL_HOURS set, those URLs plus every stored product are re-scraped
+// on that interval.
+function startScheduledRefresh() {
+  const hours = Number(process.env.RESCRAPE_INTERVAL_HOURS || 0);
+  const urlsFile = process.env.SCRAPE_URLS_FILE;
+  if (!hours && !urlsFile) return;
+
+  const urlsFromFile = () => {
+    if (!urlsFile) return [];
+    try {
+      return readFileSync(urlsFile, 'utf8')
+        .split(/\r?\n/)
+        .map((l) => l.replace(/#.*/, '').trim())
+        .filter(Boolean);
+    } catch (err) {
+      console.log(`[refresh] can't read ${urlsFile}: ${err instanceof Error ? err.message : err}`);
+      return [];
+    }
+  };
+
+  let running = false;
+  const run = async (includeStored: boolean) => {
+    if (running) return;
+    running = true;
+    try {
+      const stored = includeStored
+        ? getDatabaseSummary()
+            .reports.map((r) => r.sourceUrl)
+            .filter((u) => /^https?:\/\//i.test(u) && !u.includes('storefront.fitpulse.local'))
+        : [];
+      const urls = [...new Set([...urlsFromFile(), ...stored])];
+      if (urls.length === 0) return;
+      const results = await scrapeAndStoreUrls(urls);
+      const failed = results.filter((r) => !r.ok);
+      console.log(`[refresh] scraped ${results.length - failed.length}/${results.length} products`);
+      for (const f of failed) console.log(`[refresh] ${f.url}: ${f.error}`);
+    } finally {
+      running = false;
+    }
+  };
+
+  if (urlsFile) setTimeout(() => run(false), 5_000);
+  if (hours) {
+    setInterval(() => run(true), hours * 3_600_000);
+    console.log(`[refresh] re-scraping products every ${hours}h`);
+  }
 }
 
 async function startServer() {
@@ -1061,94 +1244,25 @@ async function startServer() {
   // Deterministic Web Scraper Endpoint (Zero LLM)
   app.post('/api/scrape', async (req, res) => {
     try {
-      const {
-        url,
-        rawHtml,
-        productName,
-        brand,
-        sku,
-        category,
-        commitToDb = true,
-      } = req.body as {
-        url?: string;
-        rawHtml?: string;
-        productName?: string;
-        brand?: string;
-        sku?: string;
-        category?: ProductFitReport['category'];
-        commitToDb?: boolean;
-      };
-
-      let targetHtml = (rawHtml || '').trim();
-      let sourceUrl = (url || 'batch://direct-review-payload').trim();
-
-      if (!targetHtml && url) {
-        const mockMatch = url.match(/\/api\/mock-store\/([a-z0-9-]+)/i);
-        if (mockMatch && MOCK_STORE_PRODUCTS[mockMatch[1]]) {
-          const mockProd = MOCK_STORE_PRODUCTS[mockMatch[1]];
-          targetHtml = renderMockStoreHtml(mockProd);
-          sourceUrl = `https://storefront.fitpulse.local/api/mock-store/${mockProd.slug}`;
-        } else if (/^https?:\/\//i.test(url)) {
-          const response = await fetch(url, {
-            headers: {
-              'User-Agent':
-                'Mozilla/5.0 (compatible; FitPulseCommercialScraper/3.0)',
-              Accept: 'text/html,application/xhtml+xml',
-            },
-          });
-          if (!response.ok) {
-            res.status(400).json({
-              error: `Remote server returned HTTP ${response.status} when scraping ${url}.`,
-            });
-            return;
-          }
-          targetHtml = await response.text();
-        } else {
-          res.status(400).json({
-            error:
-              'Provide a valid http(s):// URL, select a target SKU endpoint, or paste review HTML/text.',
-          });
-          return;
-        }
-      }
-
-      if (!targetHtml) {
-        res.status(400).json({
-          error: 'No HTML or review content provided to scrape.',
-        });
-        return;
-      }
-
-      const { meta, reviews } = scrapeHtmlWithCheerio(targetHtml, sourceUrl, {
-        productName,
-        brand,
-        sku,
-        category,
-      });
-
-      if (reviews.length === 0) {
-        res.status(422).json({
-          error:
-            `No recognizable clothing reviews were found in the target document (product detected: "${meta.name}"). Many storefronts load reviews separately from the product page; paste the review section or review text instead.`,
-        });
-        return;
-      }
-
-      const report = aggregateProductFitReport(meta, reviews);
-
-      if (commitToDb) {
-        upsertReportTransaction(report);
-      }
-
-      res.json({
-        report,
-        committedToDb: commitToDb,
-        dbState: getDatabaseSummary(),
-      });
+      const { commitToDb = true, ...input } = req.body as ScrapeInput & { commitToDb?: boolean };
+      const report = await scrapeToReport(input);
+      if (commitToDb) upsertReportTransaction(report);
+      res.json({ report, committedToDb: commitToDb, dbState: getDatabaseSummary() });
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unexpected scraper error';
-      res.status(500).json({ error: message });
+      const status = err instanceof ScrapeInputError ? err.status : 500;
+      res.status(status).json({ error: err instanceof Error ? err.message : 'Unexpected scraper error' });
     }
+  });
+
+  // Scrape a list of product URLs one after another and store each report.
+  app.post('/api/scrape/batch', async (req, res) => {
+    const { urls } = req.body as { urls?: string[] };
+    const list = (Array.isArray(urls) ? urls : []).map((u) => String(u).trim()).filter(Boolean);
+    if (list.length === 0) {
+      res.status(400).json({ error: 'Provide { "urls": ["https://..."] }.' });
+      return;
+    }
+    res.json({ results: await scrapeAndStoreUrls(list), dbState: getDatabaseSummary() });
   });
 
   const PORT = 3000;
@@ -1170,6 +1284,7 @@ async function startServer() {
 
   app.listen(PORT, '0.0.0.0', () => {
     console.log(`FitPulse Commercial Scraper & Database Server listening on http://0.0.0.0:${PORT}`);
+    startScheduledRefresh();
   });
 }
 

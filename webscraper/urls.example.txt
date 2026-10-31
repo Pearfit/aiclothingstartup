@@ -1,0 +1,2 @@
+# One product URL per line. Copy to urls.txt and run with SCRAPE_URLS_FILE=urls.txt
+https://www.uniqlo.com/ca/en/products/E450179-000/00
