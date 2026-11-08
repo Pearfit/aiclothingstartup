@@ -354,7 +354,7 @@ export const ScraperWorkbenchBar: React.FC<Props> = ({
               <button
                 type="button"
                 onClick={handleInspectPresetDom}
-                className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-medium text-slate-700 bg-stone-100 hover:bg-stone-200 rounded-md transition-colors whitespace-nowrap shrink-0"
+                className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-medium text-slate-700 bg-transparent border border-stone-300 hover:bg-stone-100 rounded-md transition-colors"
               >
                 <Eye className="w-3.5 h-3.5" aria-hidden="true" />
                 <span>
@@ -382,7 +382,7 @@ export const ScraperWorkbenchBar: React.FC<Props> = ({
                 type="button"
                 disabled={isScraping || isBatchScraping}
                 onClick={handleBatchScrapeAllPresets}
-                className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-medium text-slate-800 bg-stone-100 hover:bg-stone-200 disabled:opacity-60 rounded-md transition-colors whitespace-nowrap shrink-0"
+                className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 text-xs font-medium text-slate-800 bg-transparent border border-stone-300 hover:bg-stone-100 disabled:opacity-60 rounded-md transition-colors"
               >
                 {isBatchScraping ? (
                   <>
@@ -400,16 +400,14 @@ export const ScraperWorkbenchBar: React.FC<Props> = ({
 
             {/* Live Storefront Preset Targets */}
             <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600 pt-1">
-              <span className="font-medium text-slate-800 whitespace-nowrap shrink-0">
-                Target Storefront Feeds:
-              </span>
+              <span className="font-medium text-slate-800">Sample pages</span>
               {SCRAPABLE_PRESET_TARGETS.map((preset, idx) => (
                 <React.Fragment key={preset.id}>
                   {idx > 0 && <span aria-hidden="true">·</span>}
                   <button
                     type="button"
                     onClick={() => handleSelectPreset(preset.url)}
-                    className={`underline underline-offset-4 transition-colors whitespace-nowrap shrink-0 ${
+                    className={`underline underline-offset-4 transition-colors max-w-full text-left ${
                       targetUrl === preset.url
                         ? 'font-semibold text-slate-900'
                         : 'text-slate-600 hover:text-slate-900'

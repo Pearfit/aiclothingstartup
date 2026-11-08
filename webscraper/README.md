@@ -10,6 +10,6 @@ Open http://127.0.0.1:3000 and scrape. Fit numbers go to the shared Supabase pro
 
 On Vercel the marketing site is `pearfit.app` and this app is `pearfit.app/scraper`. That copy can still push fit numbers to Supabase. Review text lives only as long as the function instance does, because Vercel has nowhere to keep the SQLite file. Scrapes read the HTML the store returns, and a headless Chromium can still run there inside a 50 second budget.
 
-If the terminal says the fit store is not writable, or the page says `list_fit_catalog` is missing, open the Supabase SQL editor and run `fit_store.sql` once. That is a one-time step for the project. After it, every teammate can clone, push, and read the same fit rows.
+If the terminal says the fit store is not writable, or the page says `list_fit_catalog` is missing, open the Supabase SQL editor and run `fit_store.sql`. Run it again when the script changes. The current script adds `commit_fit_reports`, which writes several SKUs in one call. Until that function exists, the scraper still writes one SKU at a time. After it, every teammate can clone, push, and read the same fit rows.
 
 The five products shown on an empty local database are samples. They are not scrapes. A headless scrape stops after 90 seconds. Public product URLs stay allowed.

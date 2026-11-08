@@ -173,8 +173,10 @@ button:focus-visible {
 /* Segmented Controls (Interactive Buttons) */
 .segmented {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 4px;
+  max-width: 100%;
   padding: 4px;
   background: var(--paper-2);
   border: 1px solid var(--line);

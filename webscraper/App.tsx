@@ -499,7 +499,11 @@ export default function App() {
         {/* Fit values for the selected product. Comparison happens in the engine. */}
         <section
           aria-labelledby="active-garment-heading"
-          className="bg-white border border-stone-200 rounded-lg p-6"
+          className={
+            usingSamples
+              ? 'bg-stone-50 border border-dashed border-stone-400 rounded-lg p-6'
+              : 'bg-white border border-stone-200 rounded-lg p-6'
+          }
         >
           {/* Ingested SKU Switcher Bar */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-5 border-b border-stone-200">
@@ -527,10 +531,14 @@ export default function App() {
                     key={item.id}
                     type="button"
                     onClick={() => handleSelectProduct(item.id)}
-                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap shrink-0 ${
+                    className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors max-w-full text-left ${
+                      usingSamples && !isCurrent ? 'border border-dashed border-stone-400 ' : ''
+                    }${
                       isCurrent
                         ? 'bg-slate-900 text-white'
-                        : 'bg-stone-100 text-slate-700 hover:bg-stone-200 hover:text-slate-900'
+                        : usingSamples
+                          ? 'bg-stone-50 text-slate-700 hover:bg-stone-100'
+                          : 'bg-stone-100 text-slate-700 hover:bg-stone-200 hover:text-slate-900'
                     }`}
                   >
                     {usingSamples && <span>Sample </span>}

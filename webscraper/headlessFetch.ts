@@ -27,6 +27,69 @@ const MAX_LOAD_MORE_CLICKS = 5;
 const MAX_INFINITE_SCROLL_ROUNDS = 10;
 /** Stop paging once this many review cards are on the page; enough for fit statistics. */
 const MAX_REVIEWS = 200;
+/** Viewports to walk while looking for reviews. A plateau ends the walk sooner. */
+export const MAX_SCROLL_STEPS = 12;
+
+const SCROLL_STEP = `(() => {
+  const step = Math.max(400, Math.floor(window.innerHeight * 0.8));
+  const maxY = Math.max(
+    document.body ? document.body.scrollHeight : 0,
+    document.documentElement ? document.documentElement.scrollHeight : 0
+  );
+  const next = Math.min((window.scrollY || 0) + step, maxY);
+  window.scrollTo(0, next);
+  return next >= maxY - 4;
+})()`;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * A walk stops at the bottom, at the review cap, or once cards have appeared
+ * and two further steps add none. With no cards yet, it keeps going up to the step cap.
+ */
+export function nextScrollState(input: {
+  reviewCount: number;
+  previousCount: number;
+  stableSteps: number;
+  atBottom: boolean;
+  step: number;
+}): { stop: boolean; stableSteps: number } {
+  const grew = input.reviewCount > input.previousCount;
+  const stableSteps = grew ? 0 : input.stableSteps + 1;
+  const settled = input.reviewCount > 0 && stableSteps >= 2;
+  const emptyAndDone = input.reviewCount === 0 && input.atBottom && stableSteps >= 2;
+  const stop =
+    input.step >= MAX_SCROLL_STEPS ||
+    input.reviewCount >= MAX_REVIEWS ||
+    settled ||
+    emptyAndDone;
+  return { stop, stableSteps };
+}
+
+async function scrollUntilReviewsSettle(
+  count: () => Promise<number>,
+  scrollStep: () => Promise<boolean>,
+): Promise<void> {
+  let previous = await count();
+  let stableSteps = 0;
+  for (let step = 1; step <= MAX_SCROLL_STEPS; step++) {
+    const atBottom = await scrollStep();
+    await sleep(150);
+    const reviewCount = await count();
+    const next = nextScrollState({
+      reviewCount,
+      previousCount: previous,
+      stableSteps,
+      atBottom,
+      step,
+    });
+    previous = reviewCount;
+    stableSteps = next.stableSteps;
+    if (next.stop) return;
+  }
+}
 
 export interface RenderedPage {
   html: string;
@@ -137,17 +200,6 @@ async function clickFirst(page: Page, role: 'button' | 'link' | 'tab', name: Reg
   return false;
 }
 
-async function scrollThroughPage(page: Page): Promise<void> {
-  // Passed as a string so the bundler cannot inject helpers that do not exist in the page.
-  await page.evaluate(`(async () => {
-    const step = Math.max(400, Math.floor(window.innerHeight * 0.8));
-    for (let y = 0; y < document.body.scrollHeight && y < 40000; y += step) {
-      window.scrollTo(0, y);
-      await new Promise((r) => setTimeout(r, 150));
-    }
-  })()`);
-}
-
 const SERIALIZE_WITH_SHADOW_ROOTS = `(() => {
   const parts = [];
   const walk = (root) => {
@@ -230,7 +282,10 @@ async function renderWithPlaywright(url: string): Promise<RenderedPage> {
 
     await clickFirst(page, 'button', /^(accept( all)?( cookies)?|i accept|agree|allow all|got it|ok)$/i);
 
-    await scrollThroughPage(page);
+    await scrollUntilReviewsSettle(
+      () => countReviews(page),
+      () => page.evaluate(SCROLL_STEP) as Promise<boolean>,
+    );
 
     // The full review list is often behind a tab or accordion, even when a few highlight
     // reviews are already visible. A link may navigate away, so only use it as a last resort.
@@ -242,7 +297,10 @@ async function renderWithPlaywright(url: string): Promise<RenderedPage> {
     if (openedSection) {
       await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {});
       await waitForMoreReviews(page, reviewsBeforeOpening, REVIEW_WAIT_MS);
-      await scrollThroughPage(page);
+      await scrollUntilReviewsSettle(
+        () => countReviews(page),
+        () => page.evaluate(SCROLL_STEP) as Promise<boolean>,
+      );
     }
 
     const reviewSelectorFound = await page
@@ -255,6 +313,7 @@ async function renderWithPlaywright(url: string): Promise<RenderedPage> {
     if (reviewSelectorFound) {
       for (let i = 0; i < MAX_LOAD_MORE_CLICKS; i++) {
         const before = await countReviews(page);
+        if (before >= MAX_REVIEWS) break;
         const clicked = await clickFirst(page, 'button', /^(load|show|see|view) more( reviews)?$/i);
         if (!clicked) break;
         if (!(await waitForMoreReviews(page, before, 5000))) break;
@@ -303,14 +362,6 @@ interface ServerlessPage {
   waitForSelector(selector: string, opts: { timeout: number }): Promise<unknown>;
   close(): Promise<void>;
 }
-
-const SCROLL_PAGE = `(async () => {
-  const step = Math.max(400, Math.floor(window.innerHeight * 0.8));
-  for (let y = 0; y < document.body.scrollHeight && y < 40000; y += step) {
-    window.scrollTo(0, y);
-    await new Promise((r) => setTimeout(r, 150));
-  }
-})()`;
 
 const CLICK_ROLE_IN_PAGE = `(role, source, flags) => {
   const re = new RegExp(source, flags);
@@ -375,7 +426,10 @@ async function renderWithServerlessChromium(url: string): Promise<RenderedPage> 
     }
     await page.waitForNetworkIdle({ timeout: 8000 }).catch(() => {});
     await clickRole('button', /^(accept( all)?( cookies)?|i accept|agree|allow all|got it|ok)$/i);
-    await page.evaluate(SCROLL_PAGE);
+    await scrollUntilReviewsSettle(
+      countReviews,
+      () => page.evaluate(SCROLL_STEP) as Promise<boolean>,
+    );
 
     const reviewsBeforeOpening = await countReviews();
     const openedSection =
@@ -385,7 +439,10 @@ async function renderWithServerlessChromium(url: string): Promise<RenderedPage> 
     if (openedSection) {
       await page.waitForNetworkIdle({ timeout: 5000 }).catch(() => {});
       await waitForMore(reviewsBeforeOpening, REVIEW_WAIT_MS);
-      await page.evaluate(SCROLL_PAGE);
+      await scrollUntilReviewsSettle(
+        countReviews,
+        () => page.evaluate(SCROLL_STEP) as Promise<boolean>,
+      );
     }
 
     const reviewSelectorFound = await page
@@ -396,6 +453,7 @@ async function renderWithServerlessChromium(url: string): Promise<RenderedPage> 
     if (reviewSelectorFound) {
       for (let i = 0; i < MAX_LOAD_MORE_CLICKS; i++) {
         const before = await countReviews();
+        if (before >= MAX_REVIEWS) break;
         const clicked = await clickRole('button', /^(load|show|see|view) more( reviews)?$/i);
         if (!clicked) break;
         if (!(await waitForMore(before, 5000))) break;

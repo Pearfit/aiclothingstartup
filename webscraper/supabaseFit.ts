@@ -42,6 +42,20 @@ export function interpretFitStoreProbe(message: string | null): SupabaseSync {
   return { ok: false, error: message };
 }
 
+/** One SKU stays on commit_fit_report. Two or more share one commit_fit_reports call. */
+export function batchFitPayloads(
+  reports: ProductFitReport[],
+  charts: Record<string, SizeChartRow[]> = {},
+): ReturnType<typeof fitPayloadFromReport>[] | null {
+  if (reports.length < 2) return null;
+  return reports.map((report) => fitPayloadFromReport(report, charts[report.sku] ?? []));
+}
+
+/** A missing batch function is a database that has not been updated. A real write error is not. */
+export function batchFunctionMissing(message: string): boolean {
+  return /could not find the function|schema cache/i.test(message);
+}
+
 export async function checkFitStore(): Promise<SupabaseSync> {
   const env = readSupabaseEnv();
   if (!env) {
@@ -60,6 +74,12 @@ export async function pushFitReports(
     return { ok: false, skipped: true, reason: 'SUPABASE_URL or a Supabase key is not set' };
   }
   const db = getClient(env);
+  const payloads = batchFitPayloads(reports, charts);
+  if (payloads) {
+    const { error } = await db.rpc('commit_fit_reports', { payloads });
+    if (!error) return { ok: true };
+    if (!batchFunctionMissing(error.message)) return { ok: false, error: error.message };
+  }
   for (const report of reports) {
     const { error } = await db.rpc('commit_fit_report', {
       payload: fitPayloadFromReport(report, charts[report.sku] ?? []),
