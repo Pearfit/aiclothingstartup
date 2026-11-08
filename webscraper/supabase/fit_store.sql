@@ -146,7 +146,22 @@ begin
 end;
 $$;
 
-revoke all on function public.commit_fit_report(jsonb) from public;
-revoke all on function public.delete_fit_sku(text) from public;
-grant execute on function public.commit_fit_report(jsonb) to anon, authenticated, service_role;
-grant execute on function public.delete_fit_sku(text) to anon, authenticated, service_role;
+-- Grant every overload. A signature mismatch leaves the API calling a function anon still cannot execute.
+do $$
+declare
+  fn regprocedure;
+begin
+  for fn in
+    select p.oid::regprocedure
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'
+      and p.proname in ('commit_fit_report', 'delete_fit_sku')
+  loop
+    execute format('revoke all on function %s from public', fn);
+    execute format(
+      'grant execute on function %s to anon, authenticated, service_role',
+      fn
+    );
+  end loop;
+end $$;
