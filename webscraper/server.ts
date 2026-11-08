@@ -29,11 +29,12 @@ import {
   ratingFromLabel,
   ratingFromStarIcons,
 } from './server/pageHelpers.ts';
-
-dotenv.config();
+import { deleteRemoteFitSku, pushFitReports, type SupabaseSync } from './server/supabaseFit.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+dotenv.config({ path: path.join(__dirname, '.env.local') });
+dotenv.config({ path: path.join(__dirname, '.env') });
 
 // Initialize persistent SQLite Commercial Apparel Fit Database
 const dbPath = path.join(__dirname, 'commercial_fit.db');
@@ -1097,7 +1098,7 @@ async function startServer() {
     res.json(getDatabaseSummary());
   });
 
-  app.post('/api/db/commit', (req, res) => {
+  app.post('/api/db/commit', async (req, res) => {
     try {
       const { report, reports } = req.body as {
         report?: ProductFitReport;
@@ -1114,8 +1115,10 @@ async function startServer() {
         upsertReportTransaction(item);
       }
 
+      const supabase = await pushFitReports(list);
       res.json({
         committedCount: list.length,
+        supabase,
         ...getDatabaseSummary(),
       });
     } catch (err) {
@@ -1125,7 +1128,7 @@ async function startServer() {
     }
   });
 
-  app.delete('/api/db/sku/:sku', (req, res) => {
+  app.delete('/api/db/sku/:sku', async (req, res) => {
     const sku = req.params.sku;
     db.prepare(`DELETE FROM commercial_skus WHERE sku = ?`).run(sku);
     db.prepare(`DELETE FROM sku_size_metrics WHERE sku = ?`).run(sku);
@@ -1135,7 +1138,8 @@ async function startServer() {
       VALUES (?, ?, 'DELETE_SKU', 1, ?)
     `).run(sku, sku, new Date().toISOString());
 
-    res.json(getDatabaseSummary());
+    const supabase = await deleteRemoteFitSku(sku);
+    res.json({ supabase, ...getDatabaseSummary() });
   });
 
   app.get('/api/db/dump.sql', (_req, res) => {
@@ -1283,13 +1287,16 @@ async function startServer() {
 
       const report = aggregateProductFitReport(meta, reviews);
 
+      let supabase: SupabaseSync | null = null;
       if (commitToDb) {
         upsertReportTransaction(report);
+        supabase = await pushFitReports([report]);
       }
 
       res.json({
         report,
         committedToDb: commitToDb,
+        supabase,
         dbState: getDatabaseSummary(),
       });
     } catch (err) {
