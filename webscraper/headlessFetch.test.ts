@@ -2,7 +2,7 @@ import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
-import { closeHeadlessBrowser, renderPageHtml, shouldUseHeadlessRender } from './headlessFetch.ts';
+import { closeHeadlessBrowser, nextScrollState, renderPageHtml, shouldUseHeadlessRender, MAX_SCROLL_STEPS } from './headlessFetch.ts';
 
 // A product page whose reviews exist only after JavaScript runs: one batch appears after
 // clicking a "Reviews" tab, one lives in a shadow root, and a "Load more" button adds a third.
@@ -102,4 +102,31 @@ test('renderPageHtml reports an HTTP error status without rendering', { skip: !b
   } finally {
     server.close();
   }
+});
+
+test('scrolling stops once review cards stop arriving', () => {
+  const growing = nextScrollState({ reviewCount: 4, previousCount: 1, stableSteps: 1, atBottom: false, step: 2 });
+  assert.equal(growing.stop, false);
+  assert.equal(growing.stableSteps, 0);
+
+  const oneQuietStep = nextScrollState({ reviewCount: 4, previousCount: 4, stableSteps: 0, atBottom: false, step: 3 });
+  assert.equal(oneQuietStep.stop, false);
+  const settled = nextScrollState({ reviewCount: 4, previousCount: 4, stableSteps: 1, atBottom: false, step: 4 });
+  assert.equal(settled.stop, true);
+
+  const stillLooking = nextScrollState({ reviewCount: 0, previousCount: 0, stableSteps: 5, atBottom: false, step: 6 });
+  assert.equal(stillLooking.stop, false);
+  const emptyPage = nextScrollState({ reviewCount: 0, previousCount: 0, stableSteps: 1, atBottom: true, step: 2 });
+  assert.equal(emptyPage.stop, true);
+
+  const capped = nextScrollState({ reviewCount: 200, previousCount: 10, stableSteps: 0, atBottom: false, step: 1 });
+  assert.equal(capped.stop, true);
+  const walkedFarEnough = nextScrollState({
+    reviewCount: 0,
+    previousCount: 0,
+    stableSteps: 0,
+    atBottom: false,
+    step: MAX_SCROLL_STEPS,
+  });
+  assert.equal(walkedFarEnough.stop, true);
 });

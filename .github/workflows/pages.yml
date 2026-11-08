@@ -28,8 +28,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
+      # Pages cannot run the scraper function. Leave that bundle for Vercel.
+      - name: Stage the static site
+        run: rsync -a --exclude 'api/scraper' website/ _site/
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: website
+          path: _site
       - id: deployment
         uses: actions/deploy-pages@v4

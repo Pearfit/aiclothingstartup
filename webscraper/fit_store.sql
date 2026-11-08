@@ -80,7 +80,7 @@ begin
     from pg_proc p
     join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public'
-      and p.proname in ('commit_fit_report', 'delete_fit_sku', 'list_fit_catalog')
+      and p.proname in ('commit_fit_report', 'commit_fit_reports', 'delete_fit_sku', 'list_fit_catalog')
   loop
     execute format('drop function %s', fn);
   end loop;
@@ -197,6 +197,29 @@ begin
 end;
 $$;
 
+-- Several SKUs in one call. Each item is the same payload commit_fit_report already accepts.
+create function public.commit_fit_reports(payloads jsonb)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  item jsonb;
+begin
+  if jsonb_typeof(payloads) is distinct from 'array' then
+    raise exception 'payloads must be a non-empty array';
+  end if;
+  if jsonb_array_length(payloads) = 0 then
+    raise exception 'payloads must be a non-empty array';
+  end if;
+  for item in select value from jsonb_array_elements(payloads)
+  loop
+    perform public.commit_fit_report(item);
+  end loop;
+end;
+$$;
+
 create function public.delete_fit_sku(target_sku text)
 returns void
 language plpgsql
@@ -276,7 +299,7 @@ begin
     from pg_proc p
     join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public'
-      and p.proname in ('commit_fit_report', 'delete_fit_sku', 'list_fit_catalog')
+      and p.proname in ('commit_fit_report', 'commit_fit_reports', 'delete_fit_sku', 'list_fit_catalog')
   loop
     execute format('revoke all on function %s from public', fn);
     execute format(

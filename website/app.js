@@ -251,6 +251,9 @@ function initStakeholderTabs() {
           if (aud === 'shoppers') {
             card.classList.toggle('bento-span-2', filter === 'shoppers');
           }
+          if (aud === 'network') {
+            card.classList.toggle('bento-span-2', filter === 'network');
+          }
         } else {
           card.style.display = 'none';
         }
