@@ -66,10 +66,10 @@ export const SizeSentimentMatrix: React.FC<Props> = ({
             id="size-matrix-heading"
             className="text-xl font-bold text-slate-900 tracking-tight"
           >
-            Size-by-Size Fit Skew &amp; Sentiment Trend Matrix
+            Fit by size
           </h2>
           <p className="text-sm text-slate-600 mt-1">
-            Compare whether each individual size runs small, true to size, or large, alongside post-wash shrinkage frequency and fabric opacity notes.
+            Each size, and whether reviews say it runs small, true, or large.
           </p>
         </div>
 

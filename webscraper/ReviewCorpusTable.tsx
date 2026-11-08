@@ -77,7 +77,7 @@ export const ReviewCorpusTable: React.FC<Props> = ({
             id="review-corpus-heading"
             className="text-xl font-bold text-slate-900 tracking-tight"
           >
-            Scraped Customer Review Corpus ({filteredReviews.length} of {report.totalReviews})
+            Reviews ({filteredReviews.length} of {report.totalReviews})
           </h2>
           <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 mt-1">
             <span>Source: {report.scraperTelemetry.sourceUrl}</span>

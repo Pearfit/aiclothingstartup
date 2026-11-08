@@ -120,6 +120,17 @@ p { margin: 0 0 1rem; }
   color: var(--ink);
   border-bottom-color: var(--pear);
 }
+.nav-toggle {
+  display: none;
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  font: 600 0.86rem/1 var(--sans);
+  padding: 0.6rem 0.9rem;
+  cursor: pointer;
+}
+.nav-cta-short { display: none; }
 
 /* Buttons */
 .btn {
@@ -1060,7 +1071,29 @@ details p {
   .bento-span-2 { grid-column: span 1; }
   .kpi-strip { grid-template-columns: repeat(2, 1fr); }
   .steps { grid-template-columns: 1fr 1fr; }
-  .nav-links { display: none; }
+  .nav-toggle { display: inline-flex; }
+  .nav-inner { gap: 0.65rem; }
+  .nav-cta-long { display: none; }
+  .nav-cta-short { display: inline; }
+  .nav-links {
+    display: none;
+    position: absolute;
+    z-index: 30;
+    top: 100%;
+    left: 0;
+    right: 0;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    padding: 0 24px 8px;
+    background: var(--paper);
+    border-bottom: 1px solid var(--line);
+  }
+  .nav-links.is-open { display: flex; }
+  .nav-links a {
+    padding: 14px 0;
+    border-bottom: 1px solid var(--line);
+  }
   .hero { padding: 44px 0; }
   .section { padding: 64px 0; }
 }

@@ -501,6 +501,26 @@ async function handlePilot(e) {
   }
 }
 
+// Phone menu. The section links sit in a panel under the bar.
+const navToggle = document.querySelector('.nav-toggle');
+const siteNav = document.getElementById('site-nav');
+if (navToggle && siteNav) {
+  const setNavOpen = (open) => {
+    siteNav.classList.toggle('is-open', open);
+    navToggle.setAttribute('aria-expanded', String(open));
+    navToggle.textContent = open ? 'Close' : 'Menu';
+  };
+  navToggle.addEventListener('click', () => {
+    setNavOpen(navToggle.getAttribute('aria-expanded') !== 'true');
+  });
+  siteNav.addEventListener('click', (event) => {
+    if (event.target.closest('a')) setNavOpen(false);
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') setNavOpen(false);
+  });
+}
+
 // Initialize all interactive controls
 document.getElementById('closet-select').addEventListener('change', (e) => {
   selectedRefId = e.target.value;

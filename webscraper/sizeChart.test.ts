@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { chestStepCm, chestStepLooksMixed } from './chestStep.ts';
 import { parseSizeChart } from './sizeChart.ts';
 
 test('an inch chest chart is stored as pit-to-pit centimeters', () => {
@@ -126,6 +127,15 @@ test('a half inch and a one-digit size are kept', () => {
     { size: '2', sortOrder: 1002, chest_cm: 41.9, length_cm: 68.6, sleeve_cm: null },
     { size: '8', sortOrder: 1008, chest_cm: 48.3, length_cm: 72.4, sleeve_cm: null },
   ]);
+});
+
+test('a chest step flags a circumference mixed in with pit-to-pit', () => {
+  assert.equal(chestStepCm(54, 58), 4);
+  assert.equal(chestStepCm(54, null), null);
+  assert.equal(chestStepLooksMixed(4), false);
+  assert.equal(chestStepLooksMixed(56), true);
+  assert.equal(chestStepLooksMixed(-2), true);
+  assert.equal(chestStepLooksMixed(null), false);
 });
 
 test('a chart whose only numbers are an unspecified chest yields no rows', () => {

@@ -225,3 +225,53 @@ test('a commit stores the size chart sent with the report', async () => {
     server.close();
   }
 });
+
+test('the catalog list does not include review text', async () => {
+  const { server, port } = await listen(createApp());
+  try {
+    const report = aggregateProductFitReport(
+      {
+        id: 'list-light',
+        name: 'List Light Tee',
+        brand: 'Example',
+        category: 'T-Shirts & Tops',
+        sku: 'LIST-LIGHT-1',
+        price: 'Unknown',
+        fabricComposition: '100% cotton',
+        sourceUrl: 'https://example.test/list-light',
+      },
+      [
+        {
+          id: '1',
+          author: 'A',
+          sizePurchased: 'M',
+          rating: 4,
+          title: '',
+          body: 'True to size and the hem sits at the hip.',
+          date: '',
+          verifiedPurchase: false,
+        },
+      ]
+    );
+    const committed = await request(port, 'POST', '/api/db/commit', { report });
+    assert.equal(committed.status, 200, JSON.stringify(committed.json.error));
+    assert.equal(committed.json.reports, undefined);
+    assert.equal(JSON.stringify(committed.json).includes('hem sits at the hip'), false);
+
+    const listed = await request(port, 'GET', '/api/db/records');
+    assert.equal(listed.status, 200);
+    const catalog = listed.json.catalog as { sku: string; name: string; overallVerdict: string }[];
+    assert.equal(catalog.some((row) => row.sku === 'LIST-LIGHT-1' && row.name === 'List Light Tee'), true);
+    assert.equal(JSON.stringify(listed.json).includes('hem sits at the hip'), false);
+
+    const one = await request(port, 'GET', '/api/db/sku/LIST-LIGHT-1');
+    assert.equal(one.status, 200);
+    const stored = one.json.report as { reviews: { body: string }[] };
+    assert.equal(stored.reviews[0].body.includes('hem sits at the hip'), true);
+
+    const removed = await request(port, 'DELETE', '/api/db/sku/LIST-LIGHT-1');
+    assert.equal(removed.status, 200);
+  } finally {
+    server.close();
+  }
+});

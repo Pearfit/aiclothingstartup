@@ -21,6 +21,7 @@ import {
 } from './structuredData.ts';
 import { closeHeadlessBrowser, renderPageHtml, REVIEW_CARD_SELECTOR, shouldUseHeadlessRender } from './headlessFetch.ts';
 import { parseSizeChart, type SizeChartRow } from './sizeChart.ts';
+import { catalogEntry, type CatalogEntry } from './catalogSummary.ts';
 import {
   cleanProductTitle,
   labelledValue,
@@ -1194,30 +1195,30 @@ async function fetchStaticHtml(url: string): Promise<{ html: string } | StaticFe
   return { status: 400, message: `Too many redirects while scraping ${url}.`, blocked: false };
 }
 
-function getDatabaseSummary() {
+function storedReports(): ProductFitReport[] {
   const rows = db
     .prepare(`SELECT report_json, committed_at FROM commercial_skus ORDER BY committed_at DESC`)
     .all() as { report_json: string; committed_at: string }[];
 
-  const reports: ProductFitReport[] = rows.map((r) => {
+  return rows.map((r) => {
     const parsed = JSON.parse(r.report_json) as ProductFitReport;
     parsed.committedToDbAt = r.committed_at;
     return parsed;
   });
+}
 
-  const stats = db
-    .prepare(`
-      SELECT
-        (SELECT COUNT(*) FROM commercial_skus) as skuCount,
-        (SELECT COUNT(*) FROM sku_size_metrics WHERE review_count > 0) as sizeMetricRows,
-        (SELECT COUNT(*) FROM sku_reviews) as reviewRows
-    `)
-    .get() as { skuCount: number; sizeMetricRows: number; reviewRows: number };
+function catalogFromColumns(): CatalogEntry[] {
+  return db
+    .prepare(
+      `SELECT product_id AS id, sku, product_name AS name, brand,
+              overall_verdict AS overallVerdict, total_reviews AS totalReviews
+       FROM commercial_skus
+       ORDER BY committed_at DESC`,
+    )
+    .all() as CatalogEntry[];
+}
 
-  const recentLogs = db
-    .prepare(`SELECT id, sku, product_name, action, rows_affected, committed_at FROM ingestion_log ORDER BY id DESC LIMIT 10`)
-    .all();
-
+function loadCharts(): Record<string, SizeChartRow[]> {
   const chartRows = db
     .prepare(
       `SELECT sku, size_code, sort_order, chest_cm, length_cm, sleeve_cm
@@ -1243,13 +1244,53 @@ function getDatabaseSummary() {
     });
     charts[row.sku] = list;
   }
+  return charts;
+}
 
+function databaseStats() {
+  return db
+    .prepare(`
+      SELECT
+        (SELECT COUNT(*) FROM commercial_skus) as skuCount,
+        (SELECT COUNT(*) FROM sku_size_metrics WHERE review_count > 0) as sizeMetricRows,
+        (SELECT COUNT(*) FROM sku_reviews) as reviewRows
+    `)
+    .get() as { skuCount: number; sizeMetricRows: number; reviewRows: number };
+}
+
+function getDatabaseSummary() {
+  const reports = storedReports();
   return {
     reports,
-    stats,
-    recentLogs,
-    charts,
+    catalog: reports.map(catalogEntry),
+    stats: databaseStats(),
+    recentLogs: db
+      .prepare(`SELECT id, sku, product_name, action, rows_affected, committed_at FROM ingestion_log ORDER BY id DESC LIMIT 10`)
+      .all(),
+    charts: loadCharts(),
   };
+}
+
+/** Catalog list for the browser. Review bodies stay on GET /api/db/sku/:sku. */
+function clientDatabaseState() {
+  return {
+    catalog: catalogFromColumns(),
+    stats: databaseStats(),
+    recentLogs: db
+      .prepare(`SELECT id, sku, product_name, action, rows_affected, committed_at FROM ingestion_log ORDER BY id DESC LIMIT 10`)
+      .all(),
+    charts: loadCharts(),
+  };
+}
+
+function storedReport(sku: string): ProductFitReport | null {
+  const row = db
+    .prepare(`SELECT report_json, committed_at FROM commercial_skus WHERE sku = ?`)
+    .get(sku) as { report_json: string; committed_at: string } | undefined;
+  if (!row) return null;
+  const parsed = JSON.parse(row.report_json) as ProductFitReport;
+  parsed.committedToDbAt = row.committed_at;
+  return parsed;
 }
 
 export function createApp() {
@@ -1290,7 +1331,16 @@ export function createApp() {
   });
 
   app.get('/api/db/records', (_req, res) => {
-    res.json(getDatabaseSummary());
+    res.json(clientDatabaseState());
+  });
+
+  app.get('/api/db/sku/:sku', (req, res) => {
+    const report = storedReport(req.params.sku);
+    if (!report) {
+      res.status(404).json({ error: 'That SKU is not in the local database.' });
+      return;
+    }
+    res.json({ report, chart: loadCharts()[report.sku] ?? [] });
   });
 
   app.post('/api/db/commit', async (req, res) => {
@@ -1317,7 +1367,7 @@ export function createApp() {
       res.json({
         committedCount: list.length,
         supabase,
-        ...getDatabaseSummary(),
+        ...clientDatabaseState(),
       });
     } catch (err) {
       res.status(500).json({
@@ -1342,7 +1392,7 @@ export function createApp() {
     deleteSkuTransaction(sku);
 
     const supabase = await deleteRemoteFitSku(sku);
-    res.json({ supabase, ...getDatabaseSummary() });
+    res.json({ supabase, ...clientDatabaseState() });
   });
 
   app.get('/api/db/dump.sql', (_req, res) => {
@@ -1507,7 +1557,7 @@ export function createApp() {
             sizeChart,
             committedToDb: true,
             supabase,
-            dbState: getDatabaseSummary(),
+            dbState: clientDatabaseState(),
           });
           return;
         }
@@ -1541,7 +1591,7 @@ export function createApp() {
         sizeChart,
         committedToDb: commitToDb,
         supabase,
-        dbState: getDatabaseSummary(),
+        dbState: clientDatabaseState(),
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unexpected scraper error';
