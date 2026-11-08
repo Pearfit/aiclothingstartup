@@ -48,7 +48,23 @@ alter table public.sku_size_metrics enable row level security;
 revoke all on table public.commercial_skus from anon, authenticated;
 revoke all on table public.sku_size_metrics from anon, authenticated;
 
-create or replace function public.commit_fit_report(payload jsonb)
+-- Drop first so the recreated functions are owned by the role running this script.
+do $$
+declare
+  fn regprocedure;
+begin
+  for fn in
+    select p.oid::regprocedure
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'
+      and p.proname in ('commit_fit_report', 'delete_fit_sku')
+  loop
+    execute format('drop function %s', fn);
+  end loop;
+end $$;
+
+create function public.commit_fit_report(payload jsonb)
 returns void
 language plpgsql
 security definer
@@ -135,7 +151,7 @@ begin
 end;
 $$;
 
-create or replace function public.delete_fit_sku(target_sku text)
+create function public.delete_fit_sku(target_sku text)
 returns void
 language plpgsql
 security definer
