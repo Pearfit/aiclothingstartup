@@ -104,8 +104,15 @@ export default function App() {
         body: JSON.stringify({ report: activeReport }),
       });
       if (response.ok) {
+        const data = await response.json();
+        const remote =
+          data.supabase?.ok
+            ? ' Fit values were sent to Supabase.'
+            : data.supabase?.error
+              ? ` Supabase was not updated: ${data.supabase.error}`
+              : '';
         setSkuCommitMessage(
-          `Committed SKU ${activeReport.sku} (1 SKU row, 6 size_metrics rows, ${activeReport.totalReviews} review rows) to commercial_fit.db`
+          `Committed SKU ${activeReport.sku} (1 SKU row, 6 size_metrics rows, ${activeReport.totalReviews} review rows) to commercial_fit.db.${remote}`
         );
       }
     } finally {
