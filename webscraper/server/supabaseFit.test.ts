@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readSupabaseEnv } from './supabaseFit.ts';
+import { interpretFitStoreProbe, readSupabaseEnv } from './supabaseFit.ts';
 
 test('readSupabaseEnv requires a url and prefers the secret key', () => {
   assert.equal(readSupabaseEnv({}), null);
@@ -23,4 +23,13 @@ test('readSupabaseEnv requires a url and prefers the secret key', () => {
     })?.key,
     'sec',
   );
+});
+
+test('a rejected empty sku means the fit store is reachable', () => {
+  assert.deepEqual(interpretFitStoreProbe(null), { ok: true });
+  assert.deepEqual(interpretFitStoreProbe('sku is required'), { ok: true });
+  assert.deepEqual(interpretFitStoreProbe('permission denied for function commit_fit_report'), {
+    ok: false,
+    error: 'permission denied for function commit_fit_report',
+  });
 });

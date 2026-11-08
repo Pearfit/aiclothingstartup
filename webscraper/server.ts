@@ -29,7 +29,7 @@ import {
   ratingFromLabel,
   ratingFromStarIcons,
 } from './server/pageHelpers.ts';
-import { deleteRemoteFitSku, pushFitReports, type SupabaseSync } from './server/supabaseFit.ts';
+import { checkFitStore, deleteRemoteFitSku, pushFitReports, type SupabaseSync } from './server/supabaseFit.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1330,7 +1330,22 @@ async function startServer() {
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Pearfit Scraper Commercial Scraper & Database Server listening on http://0.0.0.0:${PORT}`);
+    console.log(`Pearfit Scraper listening on http://127.0.0.1:${PORT}`);
+    checkFitStore().then((sync) => {
+      if (sync.ok) {
+        console.log('Supabase fit store is ready. Scrapes will push fit numbers.');
+        return;
+      }
+      if ('skipped' in sync) {
+        console.log(`Supabase fit store skipped: ${sync.reason}`);
+        return;
+      }
+      console.log(`Supabase fit store is not writable yet: ${sync.error}`);
+      console.log('One person runs webscraper/supabase/fit_store.sql once in the Supabase SQL editor. After that, every clone can push.');
+    }).catch((err: unknown) => {
+      const message = err instanceof Error ? err.message : String(err);
+      console.log(`Supabase fit store check failed: ${message}`);
+    });
   });
 }
 

@@ -35,6 +35,21 @@ function getClient(env: SupabaseEnv): SupabaseClient {
   return client;
 }
 
+/** Empty payload should be rejected inside the function. That rejection means the key can call it. */
+export function interpretFitStoreProbe(message: string | null): SupabaseSync {
+  if (message === null || /sku is required/i.test(message)) return { ok: true };
+  return { ok: false, error: message };
+}
+
+export async function checkFitStore(): Promise<SupabaseSync> {
+  const env = readSupabaseEnv();
+  if (!env) {
+    return { ok: false, skipped: true, reason: 'SUPABASE_URL or a Supabase key is not set' };
+  }
+  const { error } = await getClient(env).rpc('commit_fit_report', { payload: {} });
+  return interpretFitStoreProbe(error?.message ?? null);
+}
+
 export async function pushFitReports(reports: ProductFitReport[]): Promise<SupabaseSync> {
   const env = readSupabaseEnv();
   if (!env) {
