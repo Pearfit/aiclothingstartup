@@ -13,9 +13,10 @@ import {
   parseRawReviewBatch,
   ProductFitReport,
 } from './fitAnalyzer';
-import { SCRAPABLE_PRESET_TARGETS } from './seedCatalog';
+import { SCRAPABLE_PRESET_TARGETS } from './presetTargets';
 import { apiPath } from './clientApi';
 import type { FitChartPayload } from './fitPayload';
+import type { CatalogEntry } from './catalogSummary';
 
 function supabaseNote(sync: { ok?: boolean; error?: string; skipped?: boolean; reason?: string } | null): string {
   if (!sync) return '';
@@ -29,15 +30,15 @@ interface Props {
   onScrapedReportReady: (
     report: ProductFitReport,
     dbState?: {
-      reports: ProductFitReport[];
+      catalog?: CatalogEntry[];
       charts?: Record<string, FitChartPayload[]>;
-      stats: { skuCount: number; sizeMetricRows: number; reviewRows: number };
+      stats?: { skuCount: number; sizeMetricRows: number; reviewRows: number };
     },
     sizeChart?: FitChartPayload[],
   ) => void;
   onBatchCommitted: (dbState: {
-    reports: ProductFitReport[];
-    stats: { skuCount: number; sizeMetricRows: number; reviewRows: number };
+    catalog?: CatalogEntry[];
+    stats?: { skuCount: number; sizeMetricRows: number; reviewRows: number };
   }) => void;
 }
 
@@ -274,10 +275,10 @@ export const ScraperWorkbenchBar: React.FC<Props> = ({
             id="scraper-workbench-heading"
             className="text-lg font-bold text-slate-900 tracking-tight"
           >
-            Commercial Web Scraper &amp; Database Ingestion Pipeline
+            Scrape a product page
           </h2>
           <p className="text-xs text-slate-600 mt-0.5">
-            100% deterministic Cheerio DOM &amp; rule-based lexical fit classifier (Zero LLM). Scrape item reviews by size and dump normalized records directly into SQLite (`commercial_fit.db`).
+            Reads the size chart and the reviews, then turns them into fit numbers. No language model decides a size.
           </p>
         </div>
 
@@ -291,7 +292,7 @@ export const ScraperWorkbenchBar: React.FC<Props> = ({
               className="rounded border-stone-300 text-slate-900 focus:ring-slate-900"
             />
             <Database className="w-3.5 h-3.5 text-slate-700" aria-hidden="true" />
-            <span>Auto-Dump to SQLite DB</span>
+            <span>Save to the local database</span>
           </label>
 
           <div
@@ -368,12 +369,12 @@ export const ScraperWorkbenchBar: React.FC<Props> = ({
                 {isScraping ? (
                   <>
                     <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
-                    <span>Scraping &amp; Dumping...</span>
+                    <span>Scraping…</span>
                   </>
                 ) : (
                   <>
                     <Database className="w-3.5 h-3.5" aria-hidden="true" />
-                    <span>Scrape &amp; Dump to DB</span>
+                    <span>Scrape this page</span>
                   </>
                 )}
               </button>
@@ -386,12 +387,12 @@ export const ScraperWorkbenchBar: React.FC<Props> = ({
                 {isBatchScraping ? (
                   <>
                     <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
-                    <span>Batch Dumping...</span>
+                    <span>Scraping the five samples…</span>
                   </>
                 ) : (
                   <>
                     <Layers className="w-3.5 h-3.5" aria-hidden="true" />
-                    <span>Batch Scrape All 5 Targets</span>
+                    <span>Scrape all 5 samples</span>
                   </>
                 )}
               </button>
@@ -540,12 +541,12 @@ export const ScraperWorkbenchBar: React.FC<Props> = ({
                 {isScraping ? (
                   <>
                     <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
-                    <span>Parsing &amp; Dumping...</span>
+                    <span>Parsing…</span>
                   </>
                 ) : (
                   <>
                     <Database className="w-3.5 h-3.5" aria-hidden="true" />
-                    <span>Parse &amp; Dump to DB</span>
+                    <span>Parse and save</span>
                   </>
                 )}
               </button>

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   ArrowDownRight,
   ArrowUpRight,
@@ -8,12 +8,13 @@ import {
   Check,
   RefreshCw,
 } from 'lucide-react';
-import { SEED_CATALOG } from './seedCatalog';
 import {
   GarmentSize,
   ProductFitReport,
   generateSqlInsertDump,
 } from './fitAnalyzer';
+import { catalogEntry, type CatalogEntry } from './catalogSummary';
+import { chestStepCm, chestStepLooksMixed } from './chestStep';
 import { ScraperWorkbenchBar } from './ScraperWorkbenchBar';
 import { SizeSentimentMatrix } from './SizeSentimentMatrix';
 import { GarmentBlueprintIllustration } from './GarmentBlueprintIllustration';
@@ -22,15 +23,16 @@ import { apiPath } from './clientApi';
 import type { FitChartPayload } from './fitPayload';
 
 export default function App() {
-  const [catalog, setCatalog] = useState<ProductFitReport[]>(SEED_CATALOG);
-  const [usingSamples, setUsingSamples] = useState(true);
+  const [catalog, setCatalog] = useState<CatalogEntry[]>([]);
+  const [sampleReports, setSampleReports] = useState<ProductFitReport[]>([]);
+  const [usingSamples, setUsingSamples] = useState(false);
   const [remoteSkus, setRemoteSkus] = useState<
     { sku: string; brand: string; name: string; overallVerdict: string; totalReviews: number; sizeCount: number }[]
   >([]);
   const [remoteNote, setRemoteNote] = useState<string | null>(null);
-  const [activeProductId, setActiveProductId] = useState<string>(
-    SEED_CATALOG[0].id
-  );
+  const [activeProductId, setActiveProductId] = useState('');
+  const [activeReport, setActiveReport] = useState<ProductFitReport | null>(null);
+  const [navOpen, setNavOpen] = useState(false);
   const [selectedSize, setSelectedSize] = useState<GarmentSize | 'ALL'>('ALL');
   const [selectedZoneFilter, setSelectedZoneFilter] = useState<string | null>(
     null
@@ -38,24 +40,56 @@ export default function App() {
   const [isCommittingActiveSku, setIsCommittingActiveSku] = useState(false);
   const [skuNotice, setSkuNotice] = useState<{ ok: boolean; text: string } | null>(null);
   const [charts, setCharts] = useState<Record<string, FitChartPayload[]>>({});
+  const loadSeq = useRef(0);
+
+  const showSamples = async () => {
+    const seq = ++loadSeq.current;
+    const { SEED_CATALOG } = await import('./seedCatalog');
+    if (seq !== loadSeq.current) return;
+    setSampleReports(SEED_CATALOG);
+    setCatalog(SEED_CATALOG.map(catalogEntry));
+    setUsingSamples(true);
+    setCharts({});
+    setActiveReport(SEED_CATALOG[0] ?? null);
+    setActiveProductId(SEED_CATALOG[0]?.id ?? '');
+  };
+
+  const loadStoredSku = async (sku: string) => {
+    const seq = ++loadSeq.current;
+    try {
+      const response = await fetch(apiPath(`/api/db/sku/${encodeURIComponent(sku)}`));
+      if (!response.ok) return;
+      const data = await response.json();
+      if (seq !== loadSeq.current || !data.report) return;
+      setActiveReport(data.report);
+      setActiveProductId(data.report.id);
+      if (Array.isArray(data.chart)) {
+        setCharts((prev) => ({ ...prev, [sku]: data.chart }));
+      }
+    } catch {
+      // Leave the report already on screen.
+    }
+  };
 
   const fetchDatabaseRecords = async (whenEmpty: 'samples' | 'keep' = 'samples') => {
     try {
       const response = await fetch(apiPath('/api/db/records'));
       if (!response.ok) return;
       const data = await response.json();
-      const loadedReports: ProductFitReport[] = data.reports || data.records || [];
-      if (Array.isArray(loadedReports) && loadedReports.length > 0) {
-        setCatalog(loadedReports);
+      const entries: CatalogEntry[] = Array.isArray(data.catalog) ? data.catalog : [];
+      if (entries.length > 0) {
+        setCatalog(entries);
         setUsingSamples(false);
+        setSampleReports([]);
         setCharts(data.charts && typeof data.charts === 'object' ? data.charts : {});
-      } else if (whenEmpty === 'samples') {
-        setCatalog(SEED_CATALOG);
-        setUsingSamples(true);
-        setCharts({});
+        const still = entries.find((item) => item.id === activeProductId) ?? entries[0];
+        setActiveProductId(still.id);
+        await loadStoredSku(still.sku);
+        return;
       }
+      if (whenEmpty === 'samples') await showSamples();
     } catch {
-      // Keep the sample catalog if the local database cannot be read
+      // Keep what is on screen if the local database cannot be read.
     }
   };
 
@@ -77,37 +111,69 @@ export default function App() {
   };
 
   useEffect(() => {
-    fetchDatabaseRecords();
+    let cancelled = false;
+    (async () => {
+      try {
+        const response = await fetch(apiPath('/api/db/records'));
+        if (cancelled) return;
+        if (response.ok) {
+          const data = await response.json();
+          const entries: CatalogEntry[] = Array.isArray(data.catalog) ? data.catalog : [];
+          if (entries.length > 0) {
+            setCatalog(entries);
+            setUsingSamples(false);
+            setCharts(data.charts && typeof data.charts === 'object' ? data.charts : {});
+            setActiveProductId(entries[0].id);
+            await loadStoredSku(entries[0].sku);
+            return;
+          }
+        }
+      } catch {
+        // The sample catalog is the fallback.
+      }
+      if (!cancelled) await showSamples();
+    })();
     fetchRemoteFitStore();
+    return () => {
+      cancelled = true;
+    };
   }, []);
-
-  const activeReport =
-    catalog.find((item) => item.id === activeProductId) || catalog[0];
 
   const handleSelectProduct = (productId: string) => {
     setActiveProductId(productId);
     setSelectedSize('ALL');
     setSelectedZoneFilter(null);
     setSkuNotice(null);
+    if (usingSamples) {
+      const sample = sampleReports.find((item) => item.id === productId);
+      if (sample) setActiveReport(sample);
+      return;
+    }
+    const entry = catalog.find((item) => item.id === productId);
+    if (entry) void loadStoredSku(entry.sku);
   };
 
   const handleScrapedReportReady = (
     newReport: ProductFitReport,
-    dbState?: { reports?: ProductFitReport[]; charts?: Record<string, FitChartPayload[]> },
+    dbState?: { catalog?: CatalogEntry[]; charts?: Record<string, FitChartPayload[]> },
     sizeChart?: FitChartPayload[],
   ) => {
+    loadSeq.current += 1;
     setUsingSamples(false);
+    setSampleReports([]);
     setActiveProductId(newReport.id);
+    setActiveReport(newReport);
     setSelectedSize('ALL');
     setSelectedZoneFilter(null);
     setSkuNotice(null);
-    if (dbState?.reports && dbState.reports.length > 0) {
-      setCatalog(dbState.reports);
+    if (dbState?.catalog && dbState.catalog.length > 0) {
+      setCatalog(dbState.catalog);
       setCharts(dbState.charts ?? {});
     } else {
       setCatalog((prev) => {
         const base = usingSamples ? [] : prev;
-        return [newReport, ...base.filter((item) => item.sku !== newReport.sku)];
+        const entry = catalogEntry(newReport);
+        return [entry, ...base.filter((item) => item.sku !== newReport.sku)];
       });
       if (sizeChart && sizeChart.length > 0) {
         setCharts((prev) => ({ ...(usingSamples ? {} : prev), [newReport.sku]: sizeChart }));
@@ -135,19 +201,18 @@ export default function App() {
         setSkuNotice({ ok: false, text: data.error || 'The SKU was not removed.' });
         return;
       }
-      const loadedReports: ProductFitReport[] = data.reports || data.records || [];
-      if (Array.isArray(loadedReports) && loadedReports.length > 0) {
-        setCatalog(loadedReports);
+      const entries: CatalogEntry[] = Array.isArray(data.catalog) ? data.catalog : [];
+      if (entries.length > 0) {
+        setCatalog(entries);
         setUsingSamples(false);
+        setSampleReports([]);
         setCharts(data.charts && typeof data.charts === 'object' ? data.charts : {});
-        if (activeReport.sku === sku) {
-          setActiveProductId(loadedReports[0].id);
+        if (activeReport?.sku === sku) {
+          setActiveProductId(entries[0].id);
+          void loadStoredSku(entries[0].sku);
         }
       } else {
-        setCatalog(SEED_CATALOG);
-        setUsingSamples(true);
-        setCharts({});
-        setActiveProductId(SEED_CATALOG[0].id);
+        await showSamples();
       }
       if (data.supabase && data.supabase.ok === false && data.supabase.error) {
         setSkuNotice({
@@ -164,10 +229,13 @@ export default function App() {
   };
 
   const handleCommitActiveSkuToDb = async () => {
-    if (usingSamples) {
-      setSkuNotice({ ok: false, text: 'These are samples. Scrape a product page to store a real SKU.' });
+    if (usingSamples || !activeReport) {
+      if (usingSamples) {
+        setSkuNotice({ ok: false, text: 'These are samples. Scrape a product page to store a real SKU.' });
+      }
       return;
     }
+    const report = activeReport;
     setIsCommittingActiveSku(true);
     setSkuNotice(null);
     try {
@@ -175,8 +243,8 @@ export default function App() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          report: activeReport,
-          charts: { [activeReport.sku]: charts[activeReport.sku] ?? [] },
+          report,
+          charts: { [report.sku]: charts[report.sku] ?? [] },
         }),
       });
       const data = await response.json().catch(() => ({}));
@@ -184,9 +252,10 @@ export default function App() {
         setSkuNotice({ ok: false, text: data.error || 'The SKU was not saved.' });
         return;
       }
-      if (Array.isArray(data.reports) && data.reports.length > 0) {
-        setCatalog(data.reports);
+      if (Array.isArray(data.catalog) && data.catalog.length > 0) {
+        setCatalog(data.catalog);
         setUsingSamples(false);
+        setSampleReports([]);
       }
       if (data.charts && typeof data.charts === 'object') setCharts(data.charts);
       const remote =
@@ -197,7 +266,7 @@ export default function App() {
             : '';
       setSkuNotice({
         ok: !data.supabase?.error,
-        text: `Committed SKU ${activeReport.sku} (1 SKU row, ${activeReport.sizeSummaries.length} size rows, ${activeReport.totalReviews} review rows) to commercial_fit.db.${remote}`,
+        text: `Saved SKU ${report.sku} (${report.sizeSummaries.length} size rows, ${report.totalReviews} review rows) in commercial_fit.db.${remote}`,
       });
       fetchRemoteFitStore();
     } catch {
@@ -245,26 +314,31 @@ export default function App() {
     );
   };
 
-  const activeChart = charts[activeReport.sku] ?? [];
-  const activeSkuSqlSnippet = generateSqlInsertDump(
-    [activeReport],
-    activeChart.map((row) => ({ sku: activeReport.sku, ...row })),
+  const activeChart = activeReport ? (charts[activeReport.sku] ?? []) : [];
+  const chestStepMixed = activeChart.some((row, index) =>
+    chestStepLooksMixed(
+      index === 0 ? null : chestStepCm(activeChart[index - 1].chest_cm, row.chest_cm),
+    ),
   );
+  const activeSkuSqlSnippet = activeReport
+    ? generateSqlInsertDump(
+        [activeReport],
+        activeChart.map((row) => ({ sku: activeReport.sku, ...row })),
+      )
+    : '';
 
   return (
     <div className="min-h-screen flex flex-col bg-stone-50 text-slate-900">
       {/* Strict 3-Zone Top Bar Contract */}
       <header className="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-stone-200 px-6 py-3.5">
-        <div className="max-w-[1360px] mx-auto flex items-center justify-between gap-8">
-          {/* Zone 1: Single text element wordmark */}
+        <div className="max-w-[1360px] mx-auto flex items-center justify-between gap-4">
           <a
-            href="#top"
-            className="font-display text-lg font-bold tracking-tight text-slate-900 whitespace-nowrap shrink-0"
+            href="/"
+            className="font-display text-[1.45rem] tracking-tight text-slate-900 whitespace-nowrap shrink-0"
           >
-            Pearfit Scraper
+            Pearfit
           </a>
 
-          {/* Zone 2: 4 concise single-line text navigation links */}
           <nav
             aria-label="Primary workspace navigation"
             className="hidden md:flex items-center gap-7 text-sm font-medium text-slate-600"
@@ -275,9 +349,9 @@ export default function App() {
                 e.preventDefault();
                 scrollToSection('scraper-workbench');
               }}
-              className="hover:text-slate-900 hover:underline underline-offset-4 transition-colors whitespace-nowrap shrink-0"
+              className="hover:text-slate-900 border-b border-transparent hover:border-current pb-0.5 transition-colors whitespace-nowrap shrink-0"
             >
-              Scraper Pipeline
+              Scrape
             </a>
             <a
               href="#size-matrix"
@@ -285,9 +359,9 @@ export default function App() {
                 e.preventDefault();
                 scrollToSection('size-matrix');
               }}
-              className="hover:text-slate-900 hover:underline underline-offset-4 transition-colors whitespace-nowrap shrink-0"
+              className="hover:text-slate-900 border-b border-transparent hover:border-current pb-0.5 transition-colors whitespace-nowrap shrink-0"
             >
-              Size Matrix
+              Sizes
             </a>
             <a
               href="#review-corpus"
@@ -295,17 +369,26 @@ export default function App() {
                 e.preventDefault();
                 scrollToSection('review-corpus');
               }}
-              className="hover:text-slate-900 hover:underline underline-offset-4 transition-colors whitespace-nowrap shrink-0"
+              className="hover:text-slate-900 border-b border-transparent hover:border-current pb-0.5 transition-colors whitespace-nowrap shrink-0"
             >
-              Review Corpus
+              Reviews
             </a>
           </nav>
 
-          {/* Zone 3: 1 primary action button */}
-          <div className="flex items-center shrink-0">
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              className="md:hidden px-3 py-2 text-xs font-semibold text-slate-900 border border-stone-300 rounded-lg"
+              aria-expanded={navOpen}
+              aria-controls="scraper-nav"
+              onClick={() => setNavOpen((open) => !open)}
+            >
+              {navOpen ? 'Close' : 'Menu'}
+            </button>
             <button
               type="button"
               onClick={() => {
+                setNavOpen(false);
                 scrollToSection('scraper-workbench');
                 const input = document.getElementById('target-url-input');
                 if (input) input.focus();
@@ -313,10 +396,36 @@ export default function App() {
               className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors whitespace-nowrap shrink-0"
             >
               <Database className="w-3.5 h-3.5" aria-hidden="true" />
-              <span>Scrape &amp; Dump SKU</span>
+              <span>Scrape a page</span>
             </button>
           </div>
         </div>
+        {navOpen && (
+          <nav
+            id="scraper-nav"
+            aria-label="Primary workspace navigation"
+            className="md:hidden max-w-[1360px] mx-auto flex flex-col pt-3 text-sm font-medium text-slate-600"
+          >
+            {[
+              ['scraper-workbench', 'Scrape'],
+              ['size-matrix', 'Sizes'],
+              ['review-corpus', 'Reviews'],
+            ].map(([id, label]) => (
+              <a
+                key={id}
+                href={`#${id}`}
+                onClick={(e) => {
+                  e.preventDefault();
+                  setNavOpen(false);
+                  scrollToSection(id);
+                }}
+                className="py-3 border-t border-stone-200"
+              >
+                {label}
+              </a>
+            ))}
+          </nav>
+        )}
       </header>
 
       {/* Main Content Container (1360px max width for 1440px desktop baseline) */}
@@ -385,7 +494,9 @@ export default function App() {
           )}
         </section>
 
-        {/* Active SKU fit values. Comparison happens in the separate engine. */}
+        {activeReport ? (
+        <>
+        {/* Fit values for the selected product. Comparison happens in the engine. */}
         <section
           aria-labelledby="active-garment-heading"
           className="bg-white border border-stone-200 rounded-lg p-6"
@@ -400,7 +511,7 @@ export default function App() {
               <span>
                 {usingSamples
                   ? `Sample products (${catalog.length}). These are not scrapes and are not in the local database.`
-                  : `Active SKU Telemetry Inspector (${catalog.length} SKUs in the local database):`}
+                  : `${catalog.length} saved ${catalog.length === 1 ? 'product' : 'products'}`}
               </span>
             </div>
 
@@ -410,7 +521,7 @@ export default function App() {
               className="flex flex-wrap items-center gap-1.5"
             >
               {catalog.map((item) => {
-                const isCurrent = item.id === activeReport.id;
+                const isCurrent = item.id === activeProductId;
                 return (
                   <button
                     key={item.id}
@@ -467,7 +578,7 @@ export default function App() {
                 </h1>
 
                 <p className="text-xs text-slate-500 mt-1">
-                  Mill &amp; Fabric Spec: {activeReport.fabricComposition}
+                  Mill &amp; fabric: {activeReport.fabricComposition}
                 </p>
 
                 <p className="text-sm text-slate-700 mt-4 leading-relaxed">
@@ -555,7 +666,7 @@ export default function App() {
             <div className="lg:col-span-5 bg-stone-50 border border-stone-200 rounded-lg p-5 flex flex-col justify-between">
               <div>
                 <div className="text-xs font-semibold text-slate-500">
-                  Aggregate SKU Sizing Verdict
+                  Overall fit
                 </div>
                 <div
                   data-testid="overall-fit-verdict"
@@ -661,12 +772,10 @@ export default function App() {
                 id="fit-anatomy-heading"
                 className="text-lg font-bold text-slate-900 tracking-tight"
               >
-                Anatomical Pattern Block Tension Breakdown
+                Where reviews mention the fit
               </h2>
               <p className="text-xs text-slate-600 mt-0.5">
-                Deterministic keyword extraction across shoulders, chest, waist,
-                hips, sleeves, and length. Click a zone to filter the raw review
-                table below.
+                Shoulders, chest, waist, hips, sleeves, and length. Choose a zone to filter the reviews.
               </p>
             </div>
 
@@ -836,40 +945,55 @@ export default function App() {
               {activeChart.length > 0 && (
                 <div className="mt-4">
                   <div className="text-[11px] font-semibold text-slate-600 mb-1.5">
-                    Size chart, centimeters. Chest is pit-to-pit. A blank cell was not on the chart.
+                    Size chart, centimeters. Chest is pit-to-pit. Chest step is the change from the size above.
                   </div>
                   <table className="w-full text-xs font-mono tabular-nums">
                     <thead>
                       <tr className="text-left text-slate-500">
                         <th className="py-1 pr-3 font-sans font-medium">Size</th>
                         <th className="py-1 pr-3 font-sans font-medium">Chest</th>
+                        <th className="py-1 pr-3 font-sans font-medium">Chest step</th>
                         <th className="py-1 pr-3 font-sans font-medium">Length</th>
                         <th className="py-1 font-sans font-medium">Sleeve</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {activeChart.map((row) => (
-                        <tr key={row.size} className="border-t border-stone-200">
-                          <td className="py-1 pr-3">{row.size}</td>
-                          <td className="py-1 pr-3">{row.chest_cm === null ? '—' : row.chest_cm.toFixed(1)}</td>
-                          <td className="py-1 pr-3">{row.length_cm === null ? '—' : row.length_cm.toFixed(1)}</td>
-                          <td className="py-1">{row.sleeve_cm === null ? '—' : row.sleeve_cm.toFixed(1)}</td>
-                        </tr>
-                      ))}
+                      {activeChart.map((row, index) => {
+                        const step = index === 0
+                          ? null
+                          : chestStepCm(activeChart[index - 1].chest_cm, row.chest_cm);
+                        const mixed = chestStepLooksMixed(step);
+                        return (
+                          <tr key={row.size} className="border-t border-stone-200">
+                            <td className="py-1 pr-3">{row.size}</td>
+                            <td className="py-1 pr-3">{row.chest_cm === null ? '—' : row.chest_cm.toFixed(1)}</td>
+                            <td className={`py-1 pr-3 ${mixed ? 'text-amber-800' : ''}`}>
+                              {step === null ? '—' : `${step > 0 ? '+' : ''}${step.toFixed(1)}`}
+                            </td>
+                            <td className="py-1 pr-3">{row.length_cm === null ? '—' : row.length_cm.toFixed(1)}</td>
+                            <td className="py-1">{row.sleeve_cm === null ? '—' : row.sleeve_cm.toFixed(1)}</td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
+                  {chestStepMixed && (
+                    <p className="mt-2 text-[11px] text-amber-800">
+                      A chest step over 12 cm, or a drop, usually means one cell is a full circumference rather than pit-to-pit.
+                    </p>
+                  )}
                 </div>
               )}
 
               {/* Single-SKU SQL INSERT Preview */}
-              <div className="mt-4">
-                <div className="text-[11px] font-semibold text-slate-600 mb-1.5">
-                  Relational SQL INSERT Statement ({activeReport.sku}):
-                </div>
-                <pre className="bg-slate-900 text-stone-100 p-3 rounded-md text-[11px] font-mono overflow-x-auto max-h-40 leading-relaxed">
+              <details className="mt-4">
+                <summary className="text-[11px] font-semibold text-slate-600 cursor-pointer">
+                  SQL for this SKU
+                </summary>
+                <pre className="mt-1.5 bg-slate-900 text-stone-100 p-3 rounded-md text-[11px] font-mono overflow-x-auto max-h-40 leading-relaxed">
                   {activeSkuSqlSnippet}
                 </pre>
-              </div>
+              </details>
             </div>
 
             <div className="mt-4 pt-3 border-t border-stone-200 flex items-center justify-between text-[11px] text-slate-500">
@@ -893,13 +1017,19 @@ export default function App() {
           selectedZoneFilter={selectedZoneFilter}
           onClearZoneFilter={() => setSelectedZoneFilter(null)}
         />
+        </>
+        ) : (
+          <p className="text-sm text-slate-600">
+            {catalog.length > 0 ? 'Loading this product.' : 'Loading the catalog.'}
+          </p>
+        )}
       </main>
 
       {/* Quiet Editorial Footer */}
       <footer className="border-t border-stone-200 bg-white py-6 px-6 mt-12">
         <div className="max-w-[1360px] mx-auto flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500">
           <div>
-            Pearfit Scraper — numerical fit values are sent to the comparison engine
+            Pearfit — fit numbers go to the comparison engine
           </div>
           <div className="flex items-center gap-4">
             <a
@@ -910,7 +1040,7 @@ export default function App() {
               }}
               className="hover:text-slate-900 transition-colors"
             >
-              Scraper Pipeline
+              Scrape
             </a>
             <span aria-hidden="true">·</span>
             <a

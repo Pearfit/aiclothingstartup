@@ -1,16 +1,100 @@
 @import "tailwindcss";
 
-@theme {
-  --font-display: "Plus Jakarta Sans", -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-sans: "DM Sans", -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+/* Same paper, ink, and pear as the marketing site. Utilities point at these
+   so a dark OS theme changes the scraper without rewriting every class. */
+:root {
+  --pf-paper: #f6f4ee;
+  --pf-paper-2: #ede9de;
+  --pf-card: #fdfcf8;
+  --pf-ink: #171815;
+  --pf-ink-soft: #2a2c27;
+  --pf-ink-2: #54564e;
+  --pf-ink-3: #6c6f65;
+  --pf-muted: #8a8d82;
+  --pf-line: #d8d3c4;
+  --pf-line-strong: #c8c2b0;
+  --pf-small: #8a3d28;
+  --pf-small-bar: #c4553b;
+  --pf-tts: #245c38;
+  --pf-tts-bar: #3a6b4c;
+  --pf-large: #2a4f86;
+  --pf-large-bar: #3b6aa8;
+  --pf-ok-bg: #e3efe7;
+  --pf-ok-line: #b7d4c2;
+  --pf-ok-ink: #1a3d28;
+  --pf-bad-bg: #f8ebe7;
+  --pf-bad-line: #e7c4bb;
+  --pf-bad-ink: #8d3a28;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --pf-paper: #131512;
+    --pf-paper-2: #1b1d19;
+    --pf-card: #21241f;
+    --pf-ink: #f1efe8;
+    --pf-ink-soft: #d9d6cc;
+    --pf-ink-2: #a5a89d;
+    --pf-ink-3: #8e9186;
+    --pf-muted: #7a7d73;
+    --pf-line: #33362f;
+    --pf-line-strong: #45483f;
+    --pf-small: #e07a62;
+    --pf-small-bar: #e08a70;
+    --pf-tts: #6ec089;
+    --pf-tts-bar: #4e9a68;
+    --pf-large: #78a3e0;
+    --pf-large-bar: #6b96d4;
+    --pf-ok-bg: #1d3325;
+    --pf-ok-line: #2f5a40;
+    --pf-ok-ink: #c5ead3;
+    --pf-bad-bg: #3a221c;
+    --pf-bad-line: #6a3a30;
+    --pf-bad-ink: #f0b2a4;
+    color-scheme: dark;
+  }
+}
+
+@theme inline {
+  --font-display: "Fraunces", Georgia, serif;
+  --font-sans: "Plus Jakarta Sans", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --color-white: var(--pf-card);
+  --color-stone-50: var(--pf-paper);
+  --color-stone-100: var(--pf-paper-2);
+  --color-stone-200: var(--pf-line);
+  --color-stone-300: var(--pf-line-strong);
+  --color-stone-400: var(--pf-muted);
+  --color-slate-400: var(--pf-muted);
+  --color-slate-500: var(--pf-ink-3);
+  --color-slate-600: var(--pf-ink-2);
+  --color-slate-700: var(--pf-ink-2);
+  --color-slate-800: var(--pf-ink-soft);
+  --color-slate-900: var(--pf-ink);
+  --color-amber-600: var(--pf-small-bar);
+  --color-amber-700: var(--pf-small);
+  --color-amber-800: var(--pf-small);
+  --color-emerald-50: var(--pf-ok-bg);
+  --color-emerald-200: var(--pf-ok-line);
+  --color-emerald-600: var(--pf-tts-bar);
+  --color-emerald-700: var(--pf-tts);
+  --color-emerald-800: var(--pf-tts);
+  --color-emerald-900: var(--pf-ok-ink);
+  --color-blue-600: var(--pf-large-bar);
+  --color-blue-700: var(--pf-large);
+  --color-blue-800: var(--pf-large);
+  --color-red-50: var(--pf-bad-bg);
+  --color-red-200: var(--pf-bad-line);
+  --color-red-800: var(--pf-bad-ink);
 }
 
 @layer base {
   body {
     font-family: var(--font-sans);
-    color: #0f172a;
-    background-color: #fafaf9;
+    color: var(--pf-ink);
+    background-color: var(--pf-paper);
   }
 
   h1, h2, h3, h4, .font-display {
