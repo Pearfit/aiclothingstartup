@@ -294,21 +294,32 @@ as $$
 $$;
 
 -- Grant every overload. A signature mismatch leaves the API calling a function anon still cannot execute.
+-- commit_fit_report and list_fit_catalog: anon, authenticated and service_role.
+-- delete_fit_sku: service_role only. The publishable key is committed, so anon must not be able to delete.
+-- Only the scraper server running with SUPABASE_SECRET_KEY can delete a SKU from the shared store.
+-- The anon/authenticated revoke is required: Supabase default privileges grant EXECUTE on every new
+-- public function to anon and authenticated directly, so revoking from PUBLIC alone leaves them able to call it.
 do $$
 declare
   fn regprocedure;
+  fn_name text;
 begin
-  for fn in
-    select p.oid::regprocedure
+  for fn, fn_name in
+    select p.oid::regprocedure, p.proname::text
     from pg_proc p
     join pg_namespace n on n.oid = p.pronamespace
     where n.nspname = 'public'
       and p.proname in ('commit_fit_report', 'delete_fit_sku', 'list_fit_catalog')
   loop
     execute format('revoke all on function %s from public', fn);
-    execute format(
-      'grant execute on function %s to anon, authenticated, service_role',
-      fn
-    );
+    if fn_name = 'delete_fit_sku' then
+      execute format('revoke all on function %s from anon, authenticated', fn);
+      execute format('grant execute on function %s to service_role', fn);
+    else
+      execute format(
+        'grant execute on function %s to anon, authenticated, service_role',
+        fn
+      );
+    end if;
   end loop;
 end $$;
