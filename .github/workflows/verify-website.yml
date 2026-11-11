@@ -1,0 +1,40 @@
+# Runs scripts/verify-website.mjs (32 browser checks on the marketing site) whenever
+# website/ changes. A green tick on the commit or pull request means every check passed.
+name: Verify website
+
+on:
+  pull_request:
+    paths:
+      - "website/**"
+      - "scripts/verify-website.mjs"
+      - ".github/workflows/verify-website.yml"
+  push:
+    branches: [main]
+    paths:
+      - "website/**"
+      - "scripts/verify-website.mjs"
+      - ".github/workflows/verify-website.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # Only Playwright is needed, so install it on its own instead of the scraper's full
+      # dependency tree. Same version range as webscraper/package.json.
+      - name: Install Playwright and Chromium
+        run: |
+          npm install --no-save --no-package-lock --prefix "$RUNNER_TEMP/pw" "playwright@^1.63.0"
+          "$RUNNER_TEMP/pw/node_modules/.bin/playwright" install --with-deps chromium
+      - name: Run website checks
+        env:
+          NODE_PATH: ${{ runner.temp }}/pw/node_modules
+        run: node scripts/verify-website.mjs

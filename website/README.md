@@ -8,6 +8,8 @@ The page describes what exists today: a scraper that stores numerical fit values
 - `index.html` — Page markup.
 - `styles.css` — Stylesheet, including a dark color scheme.
 - `app.js` — Sample silhouette, sample size matrix, ROI model, and the inquiry form.
+- `404.html` — Not-found page. Vercel serves it for any unknown path outside `/scraper`.
+- `favicon.svg` — Site icon.
 
 ## Preview
 Open `website/index.html` in a browser, or run `npx serve website`.
@@ -16,3 +18,17 @@ Open `website/index.html` in a browser, or run `npx serve website`.
 
 ## Inquiries
 The form posts the inquiry to `customerservice@pearfit.app` through FormSubmit. The first submission asks that inbox to confirm the address. After that, each form send delivers the email.
+
+## Verify
+From the repo root, `npm run verify:website` serves `website/` the way Vercel does and checks it in a
+headless browser at 320 to 1280px: no horizontal scroll, 16px form fields on touch sizes, every link
+resolves, favicon, title and description, logo links, mobile menu, copyright year, the inquiry form's
+success and error messages (FormSubmit is mocked, so no email is sent), and the 404 page. It also
+checks that your branch is pushed. Pass a URL to check a deploy, and `--attempts`/`--wait` to retry
+while it builds:
+
+```bash
+node scripts/verify-website.mjs https://your-preview.vercel.app --attempts 10 --wait 30
+```
+
+GitHub runs the same check (`.github/workflows/verify-website.yml`) on every pull request that changes `website/` and on pushes to `main`. A green tick means every check passed; the push check is skipped there.

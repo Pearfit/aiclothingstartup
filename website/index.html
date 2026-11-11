@@ -3,22 +3,29 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Pearfit — Size intelligence for brands &amp; shoppers</title>
-  <meta name="description" content="Pearfit pairs garment-level measurement science with proprietary review parsing to cut size-related returns for apparel brands and give every shopper clothing that fits right the first time." />
-  <meta property="og:title" content="Pearfit — Size intelligence for brands &amp; shoppers" />
-  <meta property="og:description" content="Pearfit pairs garment-level measurement science with proprietary review parsing to cut size-related returns for apparel brands and give every shopper clothing that fits right the first time." />
+  <title>Pearfit | Size and fit data for apparel brands and shoppers</title>
+  <meta name="description" content="Pearfit turns customer reviews into fit values for every size and compares a garment with clothes the shopper already owns, so fewer orders come back for size." />
+  <link rel="canonical" href="https://www.pearfit.app/" />
+  <meta name="theme-color" content="#f6f4ee" media="(prefers-color-scheme: light)" />
+  <meta name="theme-color" content="#131512" media="(prefers-color-scheme: dark)" />
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+  <meta property="og:title" content="Pearfit | Size and fit data for apparel brands and shoppers" />
+  <meta property="og:description" content="Pearfit turns customer reviews into fit values for every size and compares a garment with clothes the shopper already owns, so fewer orders come back for size." />
   <meta property="og:type" content="website" />
-  <meta name="twitter:card" content="summary_large_image" />
+  <meta property="og:url" content="https://www.pearfit.app/" />
+  <meta property="og:site_name" content="Pearfit" />
+  <meta name="twitter:card" content="summary" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400..600;1,9..144,400&family=JetBrains+Mono:wght@400;500&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
+  <a href="#main" class="skip-link">Skip to content</a>
   <header class="nav">
     <div class="wrap nav-inner">
-      <a href="#" class="brand-wordmark">Pearfit</a>
-      <nav class="nav-links" aria-label="Primary">
+      <a href="/" class="brand-wordmark" aria-label="Pearfit home">Pearfit</a>
+      <nav class="nav-links" id="primary-nav" aria-label="Primary">
         <a href="#benefits">Why Pearfit</a>
         <a href="#demo">Sample</a>
         <a href="#how">Architecture</a>
@@ -26,11 +33,16 @@
         <a href="#faq">FAQ</a>
         <a href="/scraper">Scraper</a>
       </nav>
-      <a href="#pilot" data-inquiry-switch="pilot" class="btn btn-sm">Book Brand Pilot</a>
+      <div class="nav-actions">
+        <a href="#pilot" data-inquiry-switch="pilot" class="btn btn-sm">Book Brand Pilot</a>
+        <button type="button" class="nav-toggle" id="nav-toggle" aria-controls="primary-nav" aria-expanded="false" aria-label="Open menu">
+          <span aria-hidden="true"></span>
+        </button>
+      </div>
     </div>
   </header>
 
-  <main>
+  <main id="main">
     <!-- Hero -->
     <section class="hero">
       <div class="wrap">
@@ -365,7 +377,7 @@
         <div>
           <span class="kicker">05. Get Started with Pearfit</span>
           <h2 id="pilot-heading">Start a 6-week pilot on one category</h2>
-          <div style="margin: 1.25rem 0">
+          <div class="inquiry-tabs-wrap">
             <div class="segmented" id="inquiry-tabs" role="tablist" aria-label="Inquiry mode">
               <button type="button" role="tab" aria-selected="true" data-mode="pilot">Brand Pilot Program</button>
               <button type="button" role="tab" aria-selected="false" data-mode="investor">Investor &amp; Partner Relations</button>
@@ -380,9 +392,9 @@
 
         <form class="pilot-form" id="pilot-form">
           <label class="inquiry-honey">Company website <input name="_honey" tabindex="-1" autocomplete="off" /></label>
-          <label>Full name <input name="name" required autocomplete="name" placeholder="Alex Rivera" /></label>
-          <label>Work email <input name="email" type="email" required autocomplete="email" placeholder="alex@yourbrand.com" /></label>
-          <label><span id="store-label-text">Storefront URL</span> <input id="pilot-store-input" name="store" type="url" placeholder="https://" required /></label>
+          <label>Full name <input name="name" required autocomplete="name" /></label>
+          <label>Work email <input name="email" type="email" required autocomplete="email" inputmode="email" /></label>
+          <label><span id="store-label-text">Storefront URL</span> <input id="pilot-store-input" name="store" type="text" inputmode="url" autocomplete="url" placeholder="yourbrand.com" required /></label>
           <label>
             <span id="volume-label-text">Monthly order volume</span>
             <select name="volume" id="pilot-volume-select">
@@ -393,7 +405,7 @@
             </select>
           </label>
           <button type="submit" class="btn btn-block" id="pilot-submit-btn">Request 6-Week Brand Pilot</button>
-          <p class="form-note" id="form-note">Sends this inquiry to customerservice@pearfit.app.</p>
+          <p class="form-note" id="form-note" role="status" aria-live="polite">Sends this inquiry to <a href="mailto:customerservice@pearfit.app">customerservice@pearfit.app</a>.</p>
         </form>
       </div>
     </section>
@@ -429,8 +441,19 @@
 
   <footer class="footer">
     <div class="wrap footer-inner">
-      <span class="brand-wordmark">Pearfit</span>
-      <span class="muted">Proprietary size intelligence that cuts returns for brands and delivers better-fitting clothes for shoppers.</span>
+      <div class="footer-brand">
+        <a href="/" class="brand-wordmark" aria-label="Pearfit home">Pearfit</a>
+        <span class="muted">Fit values per size from reviews, compared with clothes the shopper already owns.</span>
+      </div>
+      <nav class="footer-links" aria-label="Footer">
+        <a href="#benefits">Why Pearfit</a>
+        <a href="#roi">ROI Calculator</a>
+        <a href="#faq">FAQ</a>
+        <a href="/scraper">Scraper</a>
+        <a href="#pilot" data-inquiry-switch="pilot">Brand pilot</a>
+        <a href="mailto:customerservice@pearfit.app">customerservice@pearfit.app</a>
+      </nav>
+      <p class="footer-legal muted">&copy; <span data-year>2026</span> Pearfit. All rights reserved.</p>
     </div>
   </footer>
 

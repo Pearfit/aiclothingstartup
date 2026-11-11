@@ -1,6 +1,9 @@
 {
   "name": "pearfit-site",
   "private": true,
+  "scripts": {
+    "verify:website": "node scripts/verify-website.mjs"
+  },
   "engines": {
     "node": "22.x"
   },
