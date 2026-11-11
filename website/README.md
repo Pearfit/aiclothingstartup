@@ -30,3 +30,5 @@ while it builds:
 ```bash
 node scripts/verify-website.mjs https://your-preview.vercel.app --attempts 10 --wait 30
 ```
+
+GitHub runs the same check (`.github/workflows/verify-website.yml`) on every pull request that changes `website/` and on pushes to `main`. A green tick means every check passed; the push check is skipped there.

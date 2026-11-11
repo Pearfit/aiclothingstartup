@@ -20,6 +20,7 @@ const website = path.join(root, 'website');
 
 function loadPlaywright() {
   // Reuse the scraper's Playwright instead of adding a dependency to the site.
+  // CI installs Playwright on its own and points NODE_PATH at it.
   try {
     return createRequire(path.join(root, 'webscraper', 'package.json'))('playwright');
   } catch {
@@ -222,7 +223,8 @@ for (let attempt = 1; attempt <= attempts && !allOk; attempt++) {
   const browser = await chromium.launch();
   let results;
   try {
-    results = [...(targetArg ? [] : checkPush()), ...(await runChecks(browser, base))];
+    // In CI the checkout is the commit under test, so there is nothing to compare a push against.
+    results = [...(targetArg || process.env.CI ? [] : checkPush()), ...(await runChecks(browser, base))];
   } catch (err) {
     results = [{ name: 'suite ran to completion', ok: false, detail: err.message.split('\n')[0] }];
   } finally {
