@@ -12,4 +12,6 @@ On Vercel the marketing site is `pearfit.app` and this app is `pearfit.app/scrap
 
 If the terminal says the fit store is not writable, or the page says `list_fit_catalog` is missing, open the Supabase SQL editor and run `fit_store.sql` once. That is a one-time step for the project. After it, every teammate can clone, push, and read the same fit rows.
 
+Deleting a SKU from the shared fit store needs `SUPABASE_SECRET_KEY` in `.env.local`. `delete_fit_sku` is granted to `service_role` only, because the publishable key is public. With only the publishable key, the delete button removes the SKU from your local SQLite file and the page says Supabase was not updated.
+
 The five products shown on an empty local database are samples. They are not scrapes. A headless scrape stops after 90 seconds. Public product URLs stay allowed.
