@@ -18,3 +18,15 @@ Open `website/index.html` in a browser, or run `npx serve website`.
 
 ## Inquiries
 The form posts the inquiry to `customerservice@pearfit.app` through FormSubmit. The first submission asks that inbox to confirm the address. After that, each form send delivers the email.
+
+## Verify
+From the repo root, `npm run verify:website` serves `website/` the way Vercel does and checks it in a
+headless browser at 320 to 1280px: no horizontal scroll, 16px form fields on touch sizes, every link
+resolves, favicon, title and description, logo links, mobile menu, copyright year, the inquiry form's
+success and error messages (FormSubmit is mocked, so no email is sent), and the 404 page. It also
+checks that your branch is pushed. Pass a URL to check a deploy, and `--attempts`/`--wait` to retry
+while it builds:
+
+```bash
+node scripts/verify-website.mjs https://your-preview.vercel.app --attempts 10 --wait 30
+```
