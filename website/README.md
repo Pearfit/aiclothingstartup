@@ -8,6 +8,8 @@ The page describes what exists today: a scraper that stores numerical fit values
 - `index.html` — Page markup.
 - `styles.css` — Stylesheet, including a dark color scheme.
 - `app.js` — Sample silhouette, sample size matrix, ROI model, and the inquiry form.
+- `404.html` — Not-found page. Vercel serves it for any unknown path outside `/scraper`.
+- `favicon.svg` — Site icon.
 
 ## Preview
 Open `website/index.html` in a browser, or run `npx serve website`.

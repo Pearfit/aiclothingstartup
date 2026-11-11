@@ -414,13 +414,9 @@ function setInquiryMode(mode) {
   document.getElementById('store-label-text').textContent =
     mode === 'pilot' ? 'Storefront URL' : 'Firm or Organization';
   const storeInput = document.getElementById('pilot-store-input');
-  if (mode === 'pilot') {
-    storeInput.type = 'url';
-    storeInput.placeholder = 'https://';
-  } else {
-    storeInput.type = 'text';
-    storeInput.placeholder = 'Firm name or https://';
-  }
+  storeInput.inputMode = mode === 'pilot' ? 'url' : 'text';
+  storeInput.autocomplete = mode === 'pilot' ? 'url' : 'organization';
+  storeInput.placeholder = mode === 'pilot' ? 'yourbrand.com' : 'Firm name or website';
   document.getElementById('volume-label-text').textContent =
     mode === 'pilot' ? 'Monthly order volume' : 'Primary interest';
 
@@ -449,12 +445,24 @@ function setInquiryMode(mode) {
   }
 }
 
+const INQUIRY_MAILTO = `<a href="mailto:${INQUIRY_INBOX}">${INQUIRY_INBOX}</a>`;
+
+function setFormNote(state, html) {
+  const note = document.getElementById('form-note');
+  note.className = `form-note${state ? ` form-${state}` : ''}`;
+  note.innerHTML = html;
+}
+
+function escapeHtml(text) {
+  return String(text).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+}
+
 async function handlePilot(e) {
   e.preventDefault();
   const form = e.target;
   const d = new FormData(form);
-  const note = document.getElementById('form-note');
   const submit = document.getElementById('pilot-submit-btn');
+  const submitLabel = submit.textContent;
   if (String(d.get('_honey') || '').trim()) return;
 
   const subject =
@@ -462,7 +470,8 @@ async function handlePilot(e) {
       ? 'Pearfit inquiry'
       : 'Pearfit brand pilot inquiry';
   submit.disabled = true;
-  note.textContent = 'Sending…';
+  submit.textContent = 'Sending…';
+  setFormNote('', 'Sending your inquiry…');
   try {
     const response = await fetch(
       `https://formsubmit.co/ajax/${encodeURIComponent(INQUIRY_INBOX)}`,
@@ -486,20 +495,57 @@ async function handlePilot(e) {
     if (!response.ok || data.success === false || data.success === 'false') {
       throw new Error(data.message || 'The inquiry was not accepted.');
     }
-    note.textContent = data.message || `Sent to ${INQUIRY_INBOX}.`;
+    setFormNote(
+      'success',
+      `Thanks${d.get('name') ? `, ${escapeHtml(d.get('name'))}` : ''}. Your inquiry reached ${INQUIRY_MAILTO}, and the reply goes to ${escapeHtml(d.get('email'))}.`
+    );
     capture('inquiry_submitted', { inquiry_mode: inquiryMode });
     logPostHog('info', 'inquiry delivered', { inquiry_mode: inquiryMode });
     form.reset();
   } catch (err) {
     logPostHog('warn', 'inquiry delivery failed', { inquiry_mode: inquiryMode });
-    note.textContent =
-      err instanceof Error && err.message
-        ? err.message
-        : `The inquiry was not sent. Write to ${INQUIRY_INBOX} instead.`;
+    const reason = err instanceof Error && err.message && err.name !== 'TypeError' ? `${escapeHtml(err.message)} ` : '';
+    setFormNote('error', `Your inquiry was not sent. ${reason}Try again, or email ${INQUIRY_MAILTO}.`);
   } finally {
     submit.disabled = false;
+    submit.textContent = submitLabel;
   }
 }
+
+let invalidNoteShown = false;
+
+function showInvalidFields(e) {
+  if (invalidNoteShown) return;
+  invalidNoteShown = true;
+  requestAnimationFrame(() => { invalidNoteShown = false; });
+  const field = e.target;
+  const label = field.closest('label')?.textContent.trim().split('\n')[0] || 'This field';
+  setFormNote('error', `${escapeHtml(label)}: ${escapeHtml(field.validationMessage)}`);
+}
+
+// Mobile menu
+function initMobileNav() {
+  const toggle = document.getElementById('nav-toggle');
+  const header = toggle.closest('.nav');
+  const setOpen = (open) => {
+    header.classList.toggle('nav-open', open);
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.setAttribute('aria-label', open ? 'Close menu' : 'Open menu');
+  };
+  toggle.addEventListener('click', () => setOpen(!header.classList.contains('nav-open')));
+  header.querySelectorAll('.nav-links a, .nav-actions a').forEach((a) => a.addEventListener('click', () => setOpen(false)));
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && header.classList.contains('nav-open')) {
+      setOpen(false);
+      toggle.focus();
+    }
+  });
+  window.matchMedia('(min-width: 961px)').addEventListener('change', (mq) => mq.matches && setOpen(false));
+}
+
+document.querySelectorAll('[data-year]').forEach((el) => {
+  el.textContent = String(new Date().getFullYear());
+});
 
 // Initialize all interactive controls
 document.getElementById('closet-select').addEventListener('change', (e) => {
@@ -528,3 +574,5 @@ document.getElementById('roi-form').addEventListener('change', (e) => {
   capture('roi_calculator_adjusted', { input_name: e.target.name });
 });
 document.getElementById('pilot-form').addEventListener('submit', handlePilot);
+document.getElementById('pilot-form').addEventListener('invalid', showInvalidFields, true);
+initMobileNav();
